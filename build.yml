@@ -1,4 +1,4 @@
-name: Build mod dari zip
+name: .github/workflows/build.yml
 
 # Cara pakai: upload zip project ke folder zips/ (via web GitHub, Add file > Upload files).
 # Hasil jar: tab Actions > run terakhir > Artifacts > "hasil". Kalau gagal, ada ERROR.txt di dalamnya.
