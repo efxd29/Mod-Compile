@@ -8,19 +8,19 @@ GRADLE_FILE="$APP_DIR/build.gradle"
 PREFS_FILE="$APP_DIR/src/main/java/net/kdt/pojavlaunch/prefs/LauncherPreferences.java"
 VIDEO_PREF="$APP_DIR/src/main/res/xml/pref_video.xml"
 MANIFEST="$APP_DIR/src/main/AndroidManifest.xml"
-MAIN_MENU="$APP_DIR/src/main/java/net/kdt/pojavlaunch/fragments/MainMenuFragment.java"
+MAIN_MENU="$APP_DIR/src/main/java/net/kdt/pojavlaunch/fragments/MainMenuFragment.java"\nJAVA_DIR="$APP_DIR/src/main/java/net/kdt/pojavlaunch/fragments"
 LAYOUT_DIR="$APP_DIR/src/main/res/layout"
 DRAWABLE_DIR="$APP_DIR/src/main/res/drawable"
 
 for file in "$GRADLE_FILE" "$PREFS_FILE" "$VIDEO_PREF" "$MANIFEST" "$MAIN_MENU"; do
     [[ -f "$file" ]] || { echo "Required upstream file missing: $file" >&2; exit 2; }
 done
-mkdir -p "$LAYOUT_DIR" "$DRAWABLE_DIR"
+mkdir -p "$LAYOUT_DIR" "$DRAWABLE_DIR" "$JAVA_DIR"
 
 cp "$ROOT/minecraft-pc-launcher/overlay/app_pojavlauncher/src/main/res/layout/fragment_launcher.xml" "$LAYOUT_DIR/fragment_launcher.xml"
 cp "$ROOT/minecraft-pc-launcher/overlay/app_pojavlauncher/src/main/res/drawable/launcher_hero_card.xml" "$DRAWABLE_DIR/launcher_hero_card.xml"
 cp "$ROOT/minecraft-pc-launcher/overlay/app_pojavlauncher/src/main/res/drawable/launcher_nav_item_bg.xml" "$DRAWABLE_DIR/launcher_nav_item_bg.xml"
-cp "$ROOT/minecraft-pc-launcher/overlay/app_pojavlauncher/src/main/res/drawable/launcher_icon.xml" "$DRAWABLE_DIR/launcher_icon.xml"
+cp "$ROOT/minecraft-pc-launcher/overlay/app_pojavlauncher/src/main/res/drawable/launcher_icon.xml" "$DRAWABLE_DIR/launcher_icon.xml"\ncp "$ROOT/minecraft-pc-launcher/overlay/app_pojavlauncher/src/main/java/net/kdt/pojavlaunch/fragments/MinecraftWebFragment.java" "$JAVA_DIR/MinecraftWebFragment.java"
 
 python3 - "$GRADLE_FILE" "$PREFS_FILE" "$VIDEO_PREF" "$MANIFEST" "$MAIN_MENU" <<'PY'
 from pathlib import Path
@@ -78,7 +78,7 @@ manifest.write_text(manifest_text)
 # Point built-in launcher links to Minecraft's own website, not the engine project.
 menu_text = menu.read_text()
 news_old = 'mNewsButton.setOnClickListener(v -> Tools.openURL(requireActivity(), Tools.URL_HOME));'
-news_new = 'mNewsButton.setOnClickListener(v -> Tools.openURL(requireActivity(), "https://www.minecraft.net/en-us/articles"));'
+news_new = 'mNewsButton.setOnClickListener(v -> openMinecraftPage("Minecraft News", "https://www.minecraft.net/en-us/articles"));'
 community_old = 'mDiscordButton.setOnClickListener(v -> Tools.openURL(requireActivity(), getString(R.string.social_media_invite)));'
 community_new = 'mDiscordButton.setOnClickListener(v -> Tools.openURL(requireActivity(), "https://www.minecraft.net/en-us"));'
 if news_old not in menu_text:
@@ -96,10 +96,23 @@ if binding_old not in menu_text:
 menu_text = menu_text.replace(binding_old, binding_new, 1)
 
 listener_old = 'mEditProfileButton.setOnClickListener(v -> mVersionSpinner.openProfileEditor(requireActivity()));'
-listener_new = listener_old + '\n        mInstallationsButton.setOnClickListener(v -> mVersionSpinner.performClick());\n        mSkinsButton.setOnClickListener(v -> Tools.openURL(requireActivity(), "https://www.minecraft.net/en-us/msaprofile/mygames/editskin"));\n        mPatchNotesButton.setOnClickListener(v -> Tools.openURL(requireActivity(), "https://feedback.minecraft.net/hc/en-us/sections/360001186971-Release-Changelogs"));\n        mAccountsButton.setOnClickListener(v -> requireActivity().findViewById(R.id.account_spinner).performClick());\n        mSettingsShortcutButton.setOnClickListener(v -> requireActivity().findViewById(R.id.setting_button).performClick());'
+listener_new = listener_old + '\n        mInstallationsButton.setOnClickListener(v -> mVersionSpinner.performClick());\n        mSkinsButton.setOnClickListener(v -> Tools.openURL(requireActivity(), "https://www.minecraft.net/en-us/msaprofile/mygames/editskin"));\n        mPatchNotesButton.setOnClickListener(v -> openMinecraftPage("Patch Notes", "https://feedback.minecraft.net/hc/en-us/sections/360001186971-Release-Changelogs"));\n        mAccountsButton.setOnClickListener(v -> requireActivity().findViewById(R.id.account_spinner).performClick());\n        mSettingsShortcutButton.setOnClickListener(v -> requireActivity().findViewById(R.id.setting_button).performClick());'
 if listener_old not in menu_text:
     raise SystemExit("Could not find profile-editor listener")
 menu_text = menu_text.replace(listener_old, listener_new, 1)
+helper_marker = '    private void openGameDirectory(Context context) {'
+helper_code = '''    private void openMinecraftPage(String title, String url) {
+        Bundle args = new Bundle();
+        args.putString(MinecraftWebFragment.ARG_TITLE, title);
+        args.putString(MinecraftWebFragment.ARG_URL, url);
+        Tools.swapFragment(requireActivity(), MinecraftWebFragment.class, MinecraftWebFragment.TAG, args);
+    }
+
+'''
+if helper_marker not in menu_text:
+    raise SystemExit("Could not find insertion point for in-app Minecraft pages")
+menu_text = menu_text.replace(helper_marker, helper_code + helper_marker, 1)
+
 menu.write_text(menu_text)
 
 print("Launcher overlay applied; namespace preserved; MobileGlues-compatible renderer, news/site links, installations, accounts, settings, skins, and patch notes actions configured.")
