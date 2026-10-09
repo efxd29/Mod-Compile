@@ -8,14 +8,18 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.text.TextUtils;
+import android.text.Editable;
+import android.text.TextWatcher;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
+import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ImageView;
 import android.widget.ProgressBar;
 import android.widget.ScrollView;
+import android.widget.HorizontalScrollView;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
@@ -30,6 +34,9 @@ import net.kdt.pojavlaunch.instances.InstanceIconProvider;
 import net.kdt.pojavlaunch.instances.Instances;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
 
 /** A launcher-style installation manager backed by the engine's real profiles. */
 public final class InstallationsFragment extends Fragment {
@@ -42,9 +49,20 @@ public final class InstallationsFragment extends Fragment {
     private static final int TEXT = Color.rgb(245, 246, 243);
     private static final int MUTED = Color.rgb(181, 190, 180);
 
+    private static final int FILTER_ALL = 0;
+    private static final int FILTER_RELEASES = 1;
+    private static final int FILTER_SNAPSHOTS = 2;
+    private static final int FILTER_MODDED = 3;
+
     private LinearLayout profileContainer;
+    private LinearLayout filterRow;
     private TextView statusText;
     private ProgressBar progressBar;
+    private EditText searchField;
+    private Button[] filterButtons;
+    private Instances loadedData;
+    private int activeFilter = FILTER_ALL;
+    private String searchQuery = "";
 
     public InstallationsFragment() { super(); }
 
@@ -89,6 +107,20 @@ public final class InstallationsFragment extends Fragment {
         titleParams.leftMargin = dp(c, 4);
         top.addView(title, titleParams);
 
+        TextView refresh = new TextView(c);
+        refresh.setText("↻");
+        refresh.setTextColor(TEXT);
+        refresh.setTextSize(27);
+        refresh.setGravity(Gravity.CENTER);
+        refresh.setContentDescription("Refresh installations");
+        refresh.setBackground(shape(SURFACE, BORDER, dp(c, 6)));
+        top.addView(refresh, new LinearLayout.LayoutParams(dp(c, 42), dp(c, 42)));
+        refresh.setOnClickListener(v -> {
+            if (progressBar != null) progressBar.setVisibility(View.VISIBLE);
+            if (statusText != null) statusText.setText("Refreshing installations…");
+            loadProfiles();
+        });
+
         Button add = makeButton(c, "+  New Installation", ACCENT);
         LinearLayout.LayoutParams addParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, dp(c, 50));
@@ -105,6 +137,58 @@ public final class InstallationsFragment extends Fragment {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         descParams.topMargin = dp(c, 16);
         content.addView(description, descParams);
+
+        searchField = new EditText(c);
+        searchField.setSingleLine(true);
+        searchField.setTextSize(14);
+        searchField.setTextColor(TEXT);
+        searchField.setHintTextColor(Color.rgb(137, 147, 136));
+        searchField.setHint("Search installations");
+        searchField.setPadding(dp(c, 14), 0, dp(c, 14), 0);
+        searchField.setBackground(shape(SURFACE, BORDER, dp(c, 6)));
+        LinearLayout.LayoutParams searchParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(c, 48));
+        searchParams.topMargin = dp(c, 16);
+        content.addView(searchField, searchParams);
+        searchField.addTextChangedListener(new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
+                searchQuery = s == null ? "" : s.toString().trim().toLowerCase(Locale.ROOT);
+                if (loadedData != null && profileContainer != null) renderFilteredProfiles();
+            }
+            @Override public void afterTextChanged(Editable s) {}
+        });
+
+        HorizontalScrollView filterScroll = new HorizontalScrollView(c);
+        filterScroll.setHorizontalScrollBarEnabled(false);
+        LinearLayout.LayoutParams filterScrollParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(c, 42));
+        filterScrollParams.topMargin = dp(c, 8);
+        content.addView(filterScroll, filterScrollParams);
+        filterRow = new LinearLayout(c);
+        filterRow.setOrientation(LinearLayout.HORIZONTAL);
+        filterRow.setGravity(Gravity.CENTER_VERTICAL);
+        filterScroll.addView(filterRow, new HorizontalScrollView.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT));
+
+        String[] filterLabels = {"All", "Releases", "Snapshots", "Modded"};
+        filterButtons = new Button[filterLabels.length];
+        for (int i = 0; i < filterLabels.length; i++) {
+            final int filter = i;
+            Button chip = makeButton(c, filterLabels[i],
+                    filter == activeFilter ? ACCENT : SURFACE);
+            chip.setTextSize(12);
+            LinearLayout.LayoutParams chipParams = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, dp(c, 34));
+            if (i > 0) chipParams.leftMargin = dp(c, 8);
+            filterRow.addView(chip, chipParams);
+            filterButtons[i] = chip;
+            chip.setOnClickListener(v -> {
+                activeFilter = filter;
+                updateFilterButtons();
+                if (loadedData != null && profileContainer != null) renderFilteredProfiles();
+            });
+        }
 
         LinearLayout loading = new LinearLayout(c);
         loading.setOrientation(LinearLayout.HORIZONTAL);
@@ -160,39 +244,131 @@ public final class InstallationsFragment extends Fragment {
     }
 
     private void renderProfiles(@NonNull Instances data) {
+        loadedData = data;
+        if (progressBar != null) progressBar.setVisibility(View.GONE);
+        updateFilterButtons();
+        renderFilteredProfiles();
+    }
+
+    private void renderFilteredProfiles() {
+        if (loadedData == null || profileContainer == null || !isAdded()) return;
         Context c = requireContext();
         profileContainer.removeAllViews();
-        if (progressBar != null) progressBar.setVisibility(View.GONE);
-        if (statusText != null) statusText.setText(data.list.size()
-                + (data.list.size() == 1 ? " installation" : " installations"));
 
-        if (data.list.isEmpty()) {
-            TextView emptyTitle = new TextView(c);
-            emptyTitle.setText("No installations yet");
-            emptyTitle.setTextColor(TEXT);
-            emptyTitle.setTextSize(17);
-            emptyTitle.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
-            LinearLayout.LayoutParams emptyTitleParams = new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-            emptyTitleParams.topMargin = dp(c, 18);
-            profileContainer.addView(emptyTitle, emptyTitleParams);
+        List<Integer> visibleIndices = new ArrayList<>();
+        for (int i = 0; i < loadedData.list.size(); i++) {
+            DisplayInstance profile = loadedData.list.get(i);
+            if (matchesSearchAndFilter(profile)) visibleIndices.add(i);
+        }
 
-            TextView emptyHint = new TextView(c);
-            emptyHint.setText("Create an installation to choose a Minecraft Java Edition version or mod loader.");
-            emptyHint.setTextColor(MUTED);
-            emptyHint.setTextSize(13);
-            emptyHint.setPadding(0, dp(c, 6), 0, dp(c, 16));
-            profileContainer.addView(emptyHint, new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        if (statusText != null) {
+            if (searchQuery.isEmpty() && activeFilter == FILTER_ALL) {
+                statusText.setText(loadedData.list.size()
+                        + (loadedData.list.size() == 1 ? " installation" : " installations"));
+            } else {
+                statusText.setText("Showing " + visibleIndices.size() + " of "
+                        + loadedData.list.size() + " installations");
+            }
+        }
+
+        if (loadedData.list.isEmpty()) {
+            showEmptyState(c, "No installations yet",
+                    "Create an installation to choose a Minecraft Java Edition version or mod loader.");
+            return;
+        }
+        if (visibleIndices.isEmpty()) {
+            showEmptyState(c, "No matching installations",
+                    "Try another search or choose a different filter.");
+            Button clear = makeButton(c, "Clear search and filters", ACCENT);
+            LinearLayout.LayoutParams clearParams = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, dp(c, 44));
+            clearParams.topMargin = dp(c, 10);
+            profileContainer.addView(clear, clearParams);
+            clear.setOnClickListener(v -> {
+                searchQuery = "";
+                activeFilter = FILTER_ALL;
+                if (searchField != null) searchField.setText("");
+                updateFilterButtons();
+                renderFilteredProfiles();
+            });
             return;
         }
 
-        for (int i = 0; i < data.list.size(); i++) {
-            DisplayInstance profile = data.list.get(i);
+        for (int index : visibleIndices) {
+            DisplayInstance profile = loadedData.list.get(index);
             LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
             cardParams.bottomMargin = dp(c, 10);
-            profileContainer.addView(makeProfileCard(c, profile, i == data.selectedIndex), cardParams);
+            profileContainer.addView(
+                    makeProfileCard(c, profile, index == loadedData.selectedIndex), cardParams);
+        }
+    }
+
+    private void showEmptyState(Context c, String title, String message) {
+        TextView emptyTitle = new TextView(c);
+        emptyTitle.setText(title);
+        emptyTitle.setTextColor(TEXT);
+        emptyTitle.setTextSize(17);
+        emptyTitle.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        titleParams.topMargin = dp(c, 18);
+        profileContainer.addView(emptyTitle, titleParams);
+
+        TextView emptyHint = new TextView(c);
+        emptyHint.setText(message);
+        emptyHint.setTextColor(MUTED);
+        emptyHint.setTextSize(13);
+        emptyHint.setPadding(0, dp(c, 6), 0, dp(c, 16));
+        profileContainer.addView(emptyHint, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+    }
+
+    private boolean matchesSearchAndFilter(DisplayInstance profile) {
+        String name = profile.name == null ? "" : profile.name;
+        String rawVersion = profile.versionId == null ? "" : profile.versionId;
+        String loader = getLoaderLabel(rawVersion);
+        String searchable = (name + " " + rawVersion + " "
+                + getDisplayVersion(rawVersion) + " " + loader).toLowerCase(Locale.ROOT);
+        if (!searchQuery.isEmpty() && !searchable.contains(searchQuery)) return false;
+
+        boolean snapshot = isSnapshotVersion(rawVersion);
+        boolean modded = isModdedVersion(rawVersion);
+        switch (activeFilter) {
+            case FILTER_RELEASES:
+                return !snapshot && !modded;
+            case FILTER_SNAPSHOTS:
+                return snapshot;
+            case FILTER_MODDED:
+                return modded;
+            case FILTER_ALL:
+            default:
+                return true;
+        }
+    }
+
+    private boolean isSnapshotVersion(String versionId) {
+        String id = versionId == null ? "" : versionId.toLowerCase(Locale.ROOT);
+        return Instance.VERSION_LATEST_SNAPSHOT.equalsIgnoreCase(id)
+                || id.contains("snapshot")
+                || java.util.regex.Pattern.compile(".*\\\\d{2}w\\\\d{2}[a-z].*").matcher(id).matches()
+                || id.contains("-pre-") || id.contains("-rc")
+                || id.contains("experimental");
+    }
+
+    private boolean isModdedVersion(String versionId) {
+        String id = versionId == null ? "" : versionId.toLowerCase(Locale.ROOT);
+        String loader = getLoaderLabel(id);
+        return !loader.equals("VANILLA") && !loader.equals("RELEASE")
+                && !loader.equals("SNAPSHOT");
+    }
+
+    private void updateFilterButtons() {
+        if (filterButtons == null) return;
+        for (int i = 0; i < filterButtons.length; i++) {
+            filterButtons[i].setBackground(shape(
+                    i == activeFilter ? ACCENT : SURFACE,
+                    i == activeFilter ? ACCENT : BORDER, dp(requireContext(), 5)));
         }
     }
 
@@ -370,6 +546,10 @@ public final class InstallationsFragment extends Fragment {
     @Override
     public void onDestroyView() {
         profileContainer = null;
+        filterRow = null;
+        filterButtons = null;
+        searchField = null;
+        loadedData = null;
         statusText = null;
         progressBar = null;
         super.onDestroyView();
