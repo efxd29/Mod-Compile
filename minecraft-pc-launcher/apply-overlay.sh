@@ -90,13 +90,13 @@ menu_text = menu_text.replace(news_old, news_new).replace(community_old, communi
 # Add Installations and Skins actions wired to the existing profile/editor backend and
 # Minecraft account skin management page.
 binding_old = 'mVersionSpinner = view.findViewById(R.id.mc_version_spinner);'
-binding_new = binding_old + '\n\n        Button mInstallationsButton = view.findViewById(R.id.installations_button);\n        Button mSkinsButton = view.findViewById(R.id.skins_button);\n        Button mPatchNotesButton = view.findViewById(R.id.patch_notes_button);\n        Button mAccountsButton = view.findViewById(R.id.accounts_button);\n        Button mSettingsShortcutButton = view.findViewById(R.id.settings_shortcut_button);'
+binding_new = binding_old + '\n\n        Button mInstallationsButton = view.findViewById(R.id.installations_button);\n        Button mSkinsButton = view.findViewById(R.id.skins_button);\n        Button mPatchNotesButton = view.findViewById(R.id.patch_notes_button);\n        Button mAccountsButton = view.findViewById(R.id.accounts_button);\n        Button mSettingsShortcutButton = view.findViewById(R.id.settings_shortcut_button);\\n        Button mNewInstallationButton = view.findViewById(R.id.new_installation_button);'
 if binding_old not in menu_text:
     raise SystemExit("Could not find version spinner binding")
 menu_text = menu_text.replace(binding_old, binding_new, 1)
 
 listener_old = 'mEditProfileButton.setOnClickListener(v -> mVersionSpinner.openProfileEditor(requireActivity()));'
-listener_new = listener_old + '\n        mInstallationsButton.setOnClickListener(v -> mVersionSpinner.performClick());\n        mSkinsButton.setOnClickListener(v -> Tools.openURL(requireActivity(), "https://www.minecraft.net/en-us/msaprofile/mygames/editskin"));\n        mPatchNotesButton.setOnClickListener(v -> openMinecraftPage("Patch Notes", "https://feedback.minecraft.net/hc/en-us/sections/360001186971-Release-Changelogs"));\n        mAccountsButton.setOnClickListener(v -> requireActivity().findViewById(R.id.account_spinner).performClick());\n        mSettingsShortcutButton.setOnClickListener(v -> requireActivity().findViewById(R.id.setting_button).performClick());'
+listener_new = listener_old + '\n        mInstallationsButton.setOnClickListener(v -> mVersionSpinner.performClick());\n        mSkinsButton.setOnClickListener(v -> Tools.openURL(requireActivity(), "https://www.minecraft.net/en-us/msaprofile/mygames/editskin"));\n        mPatchNotesButton.setOnClickListener(v -> openMinecraftPage("Patch Notes", "https://feedback.minecraft.net/hc/en-us/sections/360001186971-Release-Changelogs"));\n        mAccountsButton.setOnClickListener(v -> requireActivity().findViewById(R.id.account_spinner).performClick());\n        mSettingsShortcutButton.setOnClickListener(v -> requireActivity().findViewById(R.id.setting_button).performClick());\\n        mNewInstallationButton.setOnClickListener(v -> Tools.swapFragment(requireActivity(), ProfileTypeSelectFragment.class, ProfileTypeSelectFragment.TAG, null));'
 if listener_old not in menu_text:
     raise SystemExit("Could not find profile-editor listener")
 menu_text = menu_text.replace(listener_old, listener_new, 1)
@@ -115,7 +115,7 @@ menu_text = menu_text.replace(helper_marker, helper_code + helper_marker, 1)
 
 menu.write_text(menu_text)
 
-print("Launcher overlay applied; namespace preserved; MobileGlues-compatible renderer, news/site links, installations, accounts, settings, skins, and patch notes actions configured.")
+print("Launcher overlay applied; namespace preserved; MobileGlues-compatible renderer, news/site links, new installation, installations, accounts, settings, skins, and patch notes actions configured.")
 PY
 
 echo "Overlay and branding patches applied to temporary engine checkout: $ENGINE"

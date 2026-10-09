@@ -213,6 +213,22 @@
                 app:layout_constraintTop_toBottomOf="@id/patch_notes_button" />
 
             <com.kdt.mcgui.LauncherMenuButton
+                android:id="@+id/new_installation_button"
+                style="@style/LauncherMenuButton.Universal"
+                android:layout_width="match_parent"
+                android:layout_height="58dp"
+                android:layout_marginTop="6dp"
+                android:background="@drawable/launcher_nav_item_bg"
+                android:drawableStart="@drawable/ic_add"
+                android:gravity="center_vertical"
+                android:paddingStart="14dp"
+                android:text="New Installation"
+                android:textAllCaps="false"
+                android:textColor="#F1F1F1"
+                android:textSize="13sp"
+                app:layout_constraintTop_toBottomOf="@id/installations_button" />
+
+            <com.kdt.mcgui.LauncherMenuButton
                 android:id="@+id/skins_button"
                 style="@style/LauncherMenuButton.Universal"
                 android:layout_width="match_parent"
@@ -226,7 +242,7 @@
                 android:textAllCaps="false"
                 android:textColor="#F1F1F1"
                 android:textSize="13sp"
-                app:layout_constraintTop_toBottomOf="@id/installations_button" />
+                app:layout_constraintTop_toBottomOf="@id/new_installation_button" />
 
             <com.kdt.mcgui.LauncherMenuButton
                 android:id="@+id/accounts_button"
