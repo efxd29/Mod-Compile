@@ -1,21 +1,21 @@
 # Minecraft Java Launcher for Android — private prototype
 
-This branch contains an independent UI overlay and a build workflow for an Android launcher using the upstream PojavLauncher/MojoLauncher Java Edition engine. The goal is a compact, PC-launcher-inspired Java Edition home screen while preserving the existing engine's Microsoft sign-in, profiles/instances, version list, install flow, and MobileGlues renderer integration.
+Independent Android launcher project for a Java Edition launcher with a PC-launcher-inspired home screen.
+
+## Architecture
+- The interface is an overlay; the Java Edition runtime engine is checked out separately at build time.
+- The engine supplies Microsoft sign-in, accounts, game instances/profiles, version lists, installation, launch lifecycle, and supported mod-loader installers.
+- MobileGlues is included by the upstream engine. Fresh installs default to its SFPEW compatibility wrapper, which upstream lists for all Minecraft versions; the engine retains fallback behavior when a renderer cannot initialize on a given device.
+- Account authentication stays on the supported Microsoft OAuth/device flow; no passwords or tokens are committed to source.
 
 ## Build
+GitHub Actions builds a Full Debug APK from the branch after each relevant push. The APK is published as `minecraft-launcher-debug-apk` in the run's artifacts (seven-day retention).
 
-Push changes to this branch or run **Actions → Android launcher build → Run workflow**. The workflow checks out the upstream engine, applies the overlay without changing the upstream source repository, builds the Full Debug APK, and uploads it as the `minecraft-launcher-debug-apk` artifact.
+## Current scope
+- Java Edition only; no Bedrock launcher.
+- The upstream engine advertises near-complete version coverage from early historical releases through 26.x snapshots, with Forge/Fabric support. Exact version and loader compatibility remains dependent on the upstream engine and combinations actually tested.
+- The current interface is an initial launcher-home overlay, not yet a pixel-perfect reproduction of every screen from the Windows launcher.
+- MobileGlues / SFPEW compatibility depends on device, GPU, driver, Minecraft version, and mods. A successful compile does not substitute for device testing.
 
-The GitHub Actions build is the first real compile check. Device behavior, renderer compatibility, sign-in, and launch across Minecraft versions still require testing.
-
-## Scope
-
-- Java Edition only. Bedrock is not included.
-- Preserve the upstream engine's supported runtime/version/loading capabilities rather than claiming untested universal compatibility.
-- Existing profile/instance editing is used for installation management.
-- MobileGlues integration is inherited from the upstream engine; graphics support varies by device/GPU/driver and is not a guarantee against crashes.
-- This is a prototype, not a copy of Mojang's original source and not affiliated with or endorsed by Mojang Studios or Microsoft.
-
-## UI overlay layout
-
-`overlay/app_pojavlauncher/src/main/res/layout/fragment_launcher.xml` replaces the engine's main-menu fragment layout. The core launcher view IDs are preserved so the existing Java event handlers keep working. `apply-overlay.sh` copies the overlay and applies app identity changes only in the temporary CI checkout of the engine.
+## Licensing and identity
+This project is not affiliated with or endorsed by Mojang Studios or Microsoft. No proprietary Windows launcher binary or Mojang original source code is included in this branch. The third-party engine is licensed under LGPL-3.0; see `THIRD_PARTY_NOTICES.md` and upstream license notices.

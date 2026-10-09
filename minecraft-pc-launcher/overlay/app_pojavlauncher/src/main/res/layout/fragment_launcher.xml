@@ -206,7 +206,7 @@
                 android:drawableStart="@drawable/ic_px_java_run"
                 android:gravity="center_vertical"
                 android:paddingStart="14dp"
-                android:text="Install a Java mod / loader"
+                android:text="Install mod (.jar)"
                 android:textAllCaps="false"
                 android:textColor="#F1F1F1"
                 android:textSize="13sp"
