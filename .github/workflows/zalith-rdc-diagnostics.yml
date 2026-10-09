@@ -1,0 +1,65 @@
+name: Build Reno MC Diagnostics APK
+
+on:
+  push:
+    branches:
+      - zalith-rdc-diagnostics-261
+    paths:
+      - "apply_rdc_diagnostics.py"
+      - ".github/workflows/zalith-rdc-diagnostics.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-arm64:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout build recipe
+        uses: actions/checkout@v4
+
+      - name: Checkout official Zalith Launcher 2.6.1 source
+        uses: actions/checkout@v4
+        with:
+          repository: ZalithLauncher/ZalithLauncher2
+          ref: "2.6.1"
+          path: source
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Apply guarded diagnostics patch
+        run: |
+          set -euo pipefail
+          cd source
+          python3 ../apply_rdc_diagnostics.py
+          git diff --check
+          test -s ZalithLauncher/src/main/java/com/movtery/zalithlauncher/utils/diagnostics/RdcDiagnostics.kt
+          grep -q 'Export diagnostics' ZalithLauncher/src/main/java/com/movtery/zalithlauncher/ui/screens/content/settings/AboutInfoScreen.kt
+          grep -q 'tryExportCrashSnapshot' ZalithLauncher/src/main/java/com/movtery/zalithlauncher/ZLApplication.kt
+          git diff --stat
+
+      - name: Run tests and build separate debug ARM64 APK
+        run: |
+          set -euo pipefail
+          cd source
+          chmod +x gradlew
+          ./gradlew :ZalithLauncher:testDebugUnitTest :ZalithLauncher:assembleDebug -Darch=arm64 --stacktrace
+
+      - name: Upload diagnostic APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Reno-MC-Diagnostics-2.6.1-arm64
+          path: source/ZalithLauncher/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 7
