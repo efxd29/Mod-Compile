@@ -23,6 +23,7 @@ cp "$ROOT/minecraft-pc-launcher/overlay/app_pojavlauncher/src/main/res/drawable/
 cp "$ROOT/minecraft-pc-launcher/overlay/app_pojavlauncher/src/main/res/drawable/launcher_nav_item_bg.xml" "$DRAWABLE_DIR/launcher_nav_item_bg.xml"
 cp "$ROOT/minecraft-pc-launcher/overlay/app_pojavlauncher/src/main/res/drawable/launcher_icon.xml" "$DRAWABLE_DIR/launcher_icon.xml"
 cp "$ROOT/minecraft-pc-launcher/overlay/app_pojavlauncher/src/main/java/net/kdt/pojavlaunch/fragments/MinecraftWebFragment.java" "$JAVA_DIR/MinecraftWebFragment.java"
+cp "$ROOT/minecraft-pc-launcher/overlay/app_pojavlauncher/src/main/java/net/kdt/pojavlaunch/fragments/InstallationsFragment.java" "$JAVA_DIR/InstallationsFragment.java"
 
 python3 - "$GRADLE_FILE" "$PREFS_FILE" "$VIDEO_PREF" "$MANIFEST" "$MAIN_MENU" <<'PY'
 from pathlib import Path
@@ -98,7 +99,7 @@ if binding_old not in menu_text:
 menu_text = menu_text.replace(binding_old, binding_new, 1)
 
 listener_old = 'mEditProfileButton.setOnClickListener(v -> mVersionSpinner.openProfileEditor(requireActivity()));'
-listener_new = listener_old + '\n        mInstallationsButton.setOnClickListener(v -> mVersionSpinner.performClick());\n        mSkinsButton.setOnClickListener(v -> Tools.openURL(requireActivity(), "https://www.minecraft.net/en-us/msaprofile/mygames/editskin"));\n        mPatchNotesButton.setOnClickListener(v -> openMinecraftPage("Patch Notes", "https://feedback.minecraft.net/hc/en-us/sections/360001186971-Release-Changelogs"));\n        mAccountsButton.setOnClickListener(v -> requireActivity().findViewById(R.id.account_spinner).performClick());\n        mSettingsShortcutButton.setOnClickListener(v -> requireActivity().findViewById(R.id.setting_button).performClick());\n        mNewInstallationButton.setOnClickListener(v -> Tools.swapFragment(requireActivity(), ProfileTypeSelectFragment.class, ProfileTypeSelectFragment.TAG, null));'
+listener_new = listener_old + '\n        mInstallationsButton.setOnClickListener(v -> Tools.swapFragment(requireActivity(), InstallationsFragment.class, InstallationsFragment.TAG, null));\n        mSkinsButton.setOnClickListener(v -> openMinecraftPage("Skins", "https://www.minecraft.net/en-us/msaprofile/mygames/editskin"));\n        mPatchNotesButton.setOnClickListener(v -> openMinecraftPage("Patch Notes", "https://feedback.minecraft.net/hc/en-us/sections/360001186971-Release-Changelogs"));\n        mAccountsButton.setOnClickListener(v -> requireActivity().findViewById(R.id.account_spinner).performClick());\n        mSettingsShortcutButton.setOnClickListener(v -> requireActivity().findViewById(R.id.setting_button).performClick());\n        mNewInstallationButton.setOnClickListener(v -> Tools.swapFragment(requireActivity(), ProfileTypeSelectFragment.class, ProfileTypeSelectFragment.TAG, null));'
 if listener_old not in menu_text:
     raise SystemExit("Could not find profile-editor listener")
 menu_text = menu_text.replace(listener_old, listener_new, 1)
@@ -117,7 +118,7 @@ menu_text = menu_text.replace(helper_marker, helper_code + helper_marker, 1)
 
 menu.write_text(menu_text)
 
-print("Launcher overlay applied; namespace preserved; MobileGlues-compatible renderer, news/site links, new installation, installations, accounts, settings, skins, and patch notes actions configured.")
+print("Launcher overlay applied; namespace preserved; MobileGlues-compatible renderer, news/site links, installation manager, new installation, accounts, settings, in-app skins/news/patch notes actions configured.")
 PY
 
 echo "Overlay and branding patches applied to temporary engine checkout: $ENGINE"
