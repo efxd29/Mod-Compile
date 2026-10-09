@@ -49,17 +49,26 @@ jobs:
           grep -q 'tryExportCrashSnapshot' ZalithLauncher/src/main/java/com/movtery/zalithlauncher/ZLApplication.kt
           git diff --stat
 
-      - name: Run tests and build separate debug ARM64 APK
+      - name: Build separate debug ARM64 APK
+        id: build_apk
         run: |
           set -euo pipefail
           cd source
           chmod +x gradlew
-          ./gradlew :ZalithLauncher:testDebugUnitTest :ZalithLauncher:assembleDebug -Darch=arm64 --stacktrace
+          ./gradlew :ZalithLauncher:assembleDebug -Darch=arm64 --stacktrace
 
       - name: Upload diagnostic APK
+        if: always() && steps.build_apk.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
           name: Reno-MC-Diagnostics-2.6.1-arm64
           path: source/ZalithLauncher/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 7
+
+      - name: Run upstream unit tests (reported separately from APK build)
+        id: upstream_tests
+        run: |
+          set -euo pipefail
+          cd source
+          ./gradlew :ZalithLauncher:testDebugUnitTest --stacktrace
