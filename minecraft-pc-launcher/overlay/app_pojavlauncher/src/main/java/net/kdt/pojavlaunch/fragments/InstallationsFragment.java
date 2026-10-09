@@ -13,6 +13,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.LinearLayout;
+import android.widget.ImageView;
 import android.widget.ProgressBar;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -24,6 +25,8 @@ import androidx.fragment.app.Fragment;
 import net.kdt.pojavlaunch.PojavApplication;
 import net.kdt.pojavlaunch.Tools;
 import net.kdt.pojavlaunch.instances.DisplayInstance;
+import net.kdt.pojavlaunch.instances.Instance;
+import net.kdt.pojavlaunch.instances.InstanceIconProvider;
 import net.kdt.pojavlaunch.instances.Instances;
 
 import java.io.IOException;
@@ -183,6 +186,8 @@ public final class InstallationsFragment extends Fragment {
 
         String name = profile.name == null ? "" : profile.name.trim();
         String version = profile.versionId == null ? "Unknown version" : profile.versionId.trim();
+        if (Instance.VERSION_LATEST_RELEASE.equalsIgnoreCase(version)) version = "Latest Release";
+        else if (Instance.VERSION_LATEST_SNAPSHOT.equalsIgnoreCase(version)) version = "Latest Snapshot";
         if (name.isEmpty() || "New".equalsIgnoreCase(name)) name = version;
 
         LinearLayout titleLine = new LinearLayout(c);
@@ -190,6 +195,14 @@ public final class InstallationsFragment extends Fragment {
         titleLine.setGravity(Gravity.CENTER_VERTICAL);
         card.addView(titleLine, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        ImageView profileIcon = new ImageView(c);
+        profileIcon.setImageDrawable(InstanceIconProvider.fetchIcon(c.getResources(), profile));
+        profileIcon.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        profileIcon.setContentDescription(name + " icon");
+        LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(dp(c, 44), dp(c, 44));
+        iconParams.rightMargin = dp(c, 10);
+        titleLine.addView(profileIcon, iconParams);
 
         TextView nameView = new TextView(c);
         nameView.setText(name);
