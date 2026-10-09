@@ -4,7 +4,7 @@ Independent Android launcher project for a Java Edition launcher with a PC-launc
 
 ## Architecture
 - The interface is an overlay; the Java Edition runtime engine is checked out separately at build time.
-- The engine supplies Microsoft sign-in, accounts, game instances/profiles, version lists, installation, launch lifecycle, and supported mod-loader installers.
+- The engine supplies Microsoft sign-in, accounts, game instances/profiles, version lists, installation, launch lifecycle, and upstream mod-loader installers.
 - MobileGlues is included by the upstream engine. Fresh installs default to its SFPEW compatibility wrapper, which upstream lists for all Minecraft versions; the engine retains fallback behavior when a renderer cannot initialize on a given device.
 - Account authentication stays on the supported Microsoft OAuth/device flow; no passwords or tokens are committed to source.
 
