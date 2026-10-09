@@ -90,13 +90,13 @@ menu_text = menu_text.replace(news_old, news_new).replace(community_old, communi
 # Add Installations and Skins actions wired to the existing profile/editor backend and
 # Minecraft account skin management page.
 binding_old = 'mVersionSpinner = view.findViewById(R.id.mc_version_spinner);'
-binding_new = binding_old + '\n\n        Button mInstallationsButton = view.findViewById(R.id.installations_button);\n        Button mSkinsButton = view.findViewById(R.id.skins_button);'
+binding_new = binding_old + '\n\n        Button mInstallationsButton = view.findViewById(R.id.installations_button);\n        Button mSkinsButton = view.findViewById(R.id.skins_button);\n        Button mPatchNotesButton = view.findViewById(R.id.patch_notes_button);'
 if binding_old not in menu_text:
     raise SystemExit("Could not find version spinner binding")
 menu_text = menu_text.replace(binding_old, binding_new, 1)
 
 listener_old = 'mEditProfileButton.setOnClickListener(v -> mVersionSpinner.openProfileEditor(requireActivity()));'
-listener_new = listener_old + '\n        mInstallationsButton.setOnClickListener(v -> mVersionSpinner.openProfileEditor(requireActivity()));\n        mSkinsButton.setOnClickListener(v -> Tools.openURL(requireActivity(), "https://www.minecraft.net/en-us/msaprofile/mygames/editskin"));'
+listener_new = listener_old + '\n        mInstallationsButton.setOnClickListener(v -> mVersionSpinner.performClick());\n        mSkinsButton.setOnClickListener(v -> Tools.openURL(requireActivity(), "https://www.minecraft.net/en-us/msaprofile/mygames/editskin"));\n        mPatchNotesButton.setOnClickListener(v -> Tools.openURL(requireActivity(), "https://feedback.minecraft.net/hc/en-us/sections/360001186971-Release-Changelogs"));'
 if listener_old not in menu_text:
     raise SystemExit("Could not find profile-editor listener")
 menu_text = menu_text.replace(listener_old, listener_new, 1)

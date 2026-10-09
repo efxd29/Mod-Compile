@@ -181,6 +181,22 @@
                 app:layout_constraintEnd_toEndOf="parent" />
 
             <com.kdt.mcgui.LauncherMenuButton
+                android:id="@+id/patch_notes_button"
+                style="@style/LauncherMenuButton.Universal"
+                android:layout_width="match_parent"
+                android:layout_height="58dp"
+                android:layout_marginTop="8dp"
+                android:background="@drawable/launcher_nav_item_bg"
+                android:drawableStart="@drawable/ic_px_book"
+                android:gravity="center_vertical"
+                android:paddingStart="14dp"
+                android:text="Patch Notes"
+                android:textAllCaps="false"
+                android:textColor="#F1F1F1"
+                android:textSize="13sp"
+                app:layout_constraintTop_toBottomOf="@id/news_button" />
+
+            <com.kdt.mcgui.LauncherMenuButton
                 android:id="@+id/installations_button"
                 style="@style/LauncherMenuButton.Universal"
                 android:layout_width="match_parent"
@@ -194,7 +210,7 @@
                 android:textAllCaps="false"
                 android:textColor="#F1F1F1"
                 android:textSize="13sp"
-                app:layout_constraintTop_toBottomOf="@id/news_button" />
+                app:layout_constraintTop_toBottomOf="@id/patch_notes_button" />
 
             <com.kdt.mcgui.LauncherMenuButton
                 android:id="@+id/skins_button"

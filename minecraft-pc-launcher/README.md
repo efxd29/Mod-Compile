@@ -14,7 +14,7 @@ GitHub Actions builds a Full Debug APK from the branch after each relevant push.
 ## Current scope
 - Java Edition only; no Bedrock launcher.
 - The upstream engine advertises near-complete version coverage from early historical releases through 26.x snapshots, with Forge/Fabric support. Exact version and loader compatibility remains dependent on the upstream engine and combinations actually tested.
-- The home screen now exposes Play, Installations/profile editing, Skins, Minecraft News, settings, controls, .jar installation, logs, and game files. Skins opens the official account skin page; a native skin-library/editor is still a future enhancement. The interface remains an iterative mobile adaptation, not a pixel-perfect reproduction of every Windows-launcher screen.
+- The home screen exposes Play, Installations (opens the instance/version picker), Skins, Minecraft News, Patch Notes, settings, controls, .jar installation, logs, and game files. Skins opens the official account skin page; Patch Notes opens the official Minecraft changelog archive. The interface remains an iterative mobile adaptation, not a pixel-perfect reproduction of every Windows-launcher screen.
 - MobileGlues / SFPEW compatibility depends on device, GPU, driver, Minecraft version, and mods. A successful compile does not substitute for device testing.
 
 ## Licensing and identity
