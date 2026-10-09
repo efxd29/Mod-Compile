@@ -135,13 +135,6 @@ public final class MinecraftWebFragment extends Fragment {
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
 
         back.setOnClickListener(v -> navigateBack());
-        requireActivity().getOnBackPressedDispatcher().addCallback(
-                getViewLifecycleOwner(), new OnBackPressedCallback(true) {
-                    @Override
-                    public void handleOnBackPressed() {
-                        navigateBack();
-                    }
-                });
 
         if (url != null && isMinecraftOwnedPage(Uri.parse(url))) {
             webView.loadUrl(url);
@@ -153,6 +146,18 @@ public final class MinecraftWebFragment extends Fragment {
                             + "</body></html>", "text/html", "UTF-8");
         }
         return root;
+    }
+
+    @Override
+    public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState) {
+        super.onViewCreated(view, savedInstanceState);
+        requireActivity().getOnBackPressedDispatcher().addCallback(
+                getViewLifecycleOwner(), new OnBackPressedCallback(true) {
+                    @Override
+                    public void handleOnBackPressed() {
+                        navigateBack();
+                    }
+                });
     }
 
     private boolean routeNavigation(Uri uri) {
