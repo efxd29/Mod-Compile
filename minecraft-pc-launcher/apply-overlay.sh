@@ -21,6 +21,8 @@ import sys
 path = Path(sys.argv[1])
 text = path.read_text()
 
+# Keep the upstream namespace/package for compiled R and source references.
+# Rebrand only the installed application ID and runtime authority/resource values.
 replacements = [
     ('applicationId "net.kdt.pojavlaunch"', 'applicationId "net.efxd29.minecraftlauncher"'),
     ('"PojavLauncher (Debug)"', '"Minecraft Launcher (Debug)"'),
@@ -32,14 +34,17 @@ replacements = [
     ("'net.kdt.pojavlaunch.scoped.gamefolder'", "'net.efxd29.minecraftlauncher.scoped.gamefolder'"),
     ("'net.kdt.pojavlaunch.pub'", "'net.efxd29.minecraftlauncher.pub'"),
     ("'net.kdt.pojavlaunch.debug'", "'net.efxd29.minecraftlauncher.debug'"),
-    ("'net.kdt.pojavlaunch'", "'net.efxd29.minecraftlauncher'"),
+    ("'application_package', 'net.kdt.pojavlaunch'", "'application_package', 'net.efxd29.minecraftlauncher'"),
 ]
 for old, new in replacements:
     if old not in text:
         print(f"NOTE: upstream Gradle value not found: {old}")
     text = text.replace(old, new)
+
+if "namespace 'net.kdt.pojavlaunch'" not in text:
+    raise SystemExit("Unexpected upstream namespace: expected net.kdt.pojavlaunch to remain unchanged")
 path.write_text(text)
-print("Launcher overlay applied.")
+print("Launcher overlay applied; internal namespace preserved.")
 PY
 
 echo "Overlay copied into temporary engine checkout: $ENGINE"
