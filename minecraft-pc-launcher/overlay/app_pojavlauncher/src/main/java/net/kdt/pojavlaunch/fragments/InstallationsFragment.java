@@ -166,11 +166,33 @@ public final class InstallationsFragment extends Fragment {
         if (statusText != null) statusText.setText(data.list.size()
                 + (data.list.size() == 1 ? " installation" : " installations"));
 
+        if (data.list.isEmpty()) {
+            TextView emptyTitle = new TextView(c);
+            emptyTitle.setText("No installations yet");
+            emptyTitle.setTextColor(TEXT);
+            emptyTitle.setTextSize(17);
+            emptyTitle.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+            LinearLayout.LayoutParams emptyTitleParams = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            emptyTitleParams.topMargin = dp(c, 18);
+            profileContainer.addView(emptyTitle, emptyTitleParams);
+
+            TextView emptyHint = new TextView(c);
+            emptyHint.setText("Create an installation to choose a Minecraft Java Edition version or mod loader.");
+            emptyHint.setTextColor(MUTED);
+            emptyHint.setTextSize(13);
+            emptyHint.setPadding(0, dp(c, 6), 0, dp(c, 16));
+            profileContainer.addView(emptyHint, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            return;
+        }
+
         for (int i = 0; i < data.list.size(); i++) {
             DisplayInstance profile = data.list.get(i);
-            profileContainer.addView(makeProfileCard(c, profile, i == data.selectedIndex),
-                    new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
-                            ViewGroup.LayoutParams.WRAP_CONTENT));
+            LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            cardParams.bottomMargin = dp(c, 10);
+            profileContainer.addView(makeProfileCard(c, profile, i == data.selectedIndex), cardParams);
         }
     }
 
@@ -180,14 +202,11 @@ public final class InstallationsFragment extends Fragment {
         card.setPadding(dp(c, 14), dp(c, 13), dp(c, 14), dp(c, 12));
         card.setBackground(shape(selected ? Color.rgb(39, 54, 37) : SURFACE,
                 selected ? ACCENT : BORDER, dp(c, 7)));
-        LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        cardParams.bottomMargin = dp(c, 10);
 
         String name = profile.name == null ? "" : profile.name.trim();
-        String version = profile.versionId == null ? "Unknown version" : profile.versionId.trim();
-        if (Instance.VERSION_LATEST_RELEASE.equalsIgnoreCase(version)) version = "Latest Release";
-        else if (Instance.VERSION_LATEST_SNAPSHOT.equalsIgnoreCase(version)) version = "Latest Snapshot";
+        String rawVersion = profile.versionId == null ? "Unknown version" : profile.versionId.trim();
+        String version = getDisplayVersion(rawVersion);
+        String loader = getLoaderLabel(rawVersion);
         if (name.isEmpty() || "New".equalsIgnoreCase(name)) name = version;
 
         LinearLayout titleLine = new LinearLayout(c);
@@ -214,6 +233,17 @@ public final class InstallationsFragment extends Fragment {
         titleLine.addView(nameView, new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
 
+        TextView loaderBadge = new TextView(c);
+        loaderBadge.setText(loader);
+        loaderBadge.setTextColor(loader.equals("VANILLA")
+                ? Color.rgb(207, 215, 203) : Color.rgb(185, 226, 169));
+        loaderBadge.setTextSize(9);
+        loaderBadge.setTypeface(Typeface.DEFAULT_BOLD);
+        loaderBadge.setPadding(dp(c, 7), dp(c, 4), dp(c, 7), dp(c, 4));
+        loaderBadge.setBackground(shape(Color.rgb(42, 47, 41), BORDER, dp(c, 4)));
+        titleLine.addView(loaderBadge, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
         if (selected) {
             TextView badge = new TextView(c);
             badge.setText("SELECTED");
@@ -222,8 +252,10 @@ public final class InstallationsFragment extends Fragment {
             badge.setTypeface(Typeface.DEFAULT_BOLD);
             badge.setPadding(dp(c, 8), dp(c, 4), dp(c, 8), dp(c, 4));
             badge.setBackground(shape(Color.rgb(43, 66, 39), ACCENT, dp(c, 4)));
-            titleLine.addView(badge, new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            LinearLayout.LayoutParams selectedParams = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            selectedParams.leftMargin = dp(c, 6);
+            titleLine.addView(badge, selectedParams);
         }
 
         TextView versionView = new TextView(c);
@@ -265,6 +297,48 @@ public final class InstallationsFragment extends Fragment {
         });
 
         return card;
+    }
+
+    private static String getLoaderLabel(String versionId) {
+        String id = versionId == null ? "" : versionId.toLowerCase(java.util.Locale.ROOT);
+        if (Instance.VERSION_LATEST_RELEASE.equalsIgnoreCase(id)) return "RELEASE";
+        if (Instance.VERSION_LATEST_SNAPSHOT.equalsIgnoreCase(id)) return "SNAPSHOT";
+        if (id.contains("legacyfabric") || id.contains("legacy-fabric")) return "LEGACY FABRIC";
+        if (id.contains("neoforge")) return "NEOFORGE";
+        if (id.contains("fabric")) return "FABRIC";
+        if (id.contains("quilt")) return "QUILT";
+        if (id.contains("forge")) return "FORGE";
+        if (id.contains("optifine")) return "OPTIFINE";
+        if (id.contains("liteloader")) return "LITELOADER";
+        if (id.contains("bta") || id.contains("better-than-adventure")) return "BTA";
+        return "VANILLA";
+    }
+
+    private static String getDisplayVersion(String versionId) {
+        if (versionId == null || versionId.trim().isEmpty()) return "Unknown version";
+        if (Instance.VERSION_LATEST_RELEASE.equalsIgnoreCase(versionId)) return "Latest Release";
+        if (Instance.VERSION_LATEST_SNAPSHOT.equalsIgnoreCase(versionId)) return "Latest Snapshot";
+
+        java.util.regex.Matcher matcher = java.util.regex.Pattern
+                .compile("(?<!\\\\d)\\\\d+(?:\\\\.\\\\d+){1,3}(?!\\\\d)")
+                .matcher(versionId);
+        String first = null;
+        String last = null;
+        while (matcher.find()) {
+            if (first == null) first = matcher.group();
+            last = matcher.group();
+        }
+        if (first == null) return versionId;
+
+        String lower = versionId.toLowerCase(java.util.Locale.ROOT);
+        // Loader profile IDs may begin with the loader's own version. In those
+        // forms the Minecraft target version is the final numeric version.
+        if (lower.startsWith("fabric-loader-") || lower.startsWith("quilt-loader-")
+                || lower.startsWith("legacy-fabric") || lower.startsWith("legacyfabric")
+                || lower.startsWith("neoforge-")) {
+            return last;
+        }
+        return first;
     }
 
     private static Button makeButton(Context c, String label, int color) {
