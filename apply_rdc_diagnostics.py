@@ -186,7 +186,7 @@ object RdcDiagnostics {
             if (!runCatching { process.waitFor(2, TimeUnit.SECONDS) }.getOrDefault(false)) process.destroyForcibly()
             val raw = readCapped(temp, 1024 * 1024).toString(Charsets.UTF_8)
             val tags = listOf(context.packageName, "AndroidRuntime", "DEBUG", "libc", "AppLog", "Pojav", "SDL", "Zalith", "linker", "crash_dump", "tombstoned")
-            redact(raw.lineSequence().filter { line -> tags.any { line.contains(it, true) } }.takeLast(700).joinToString("\n"))
+            redact(raw.lineSequence().filter { line -> tags.any { line.contains(it, true) } }.toList().takeLast(700).joinToString("\n"))
         } catch (_: Throwable) {
             ""
         } finally {
