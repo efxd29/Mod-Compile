@@ -85,9 +85,24 @@ if news_old not in menu_text:
     raise SystemExit("Could not find upstream news-button handler")
 if community_old not in menu_text:
     raise SystemExit("Could not find upstream community-button handler")
-menu.write_text(menu_text.replace(news_old, news_new).replace(community_old, community_new))
+menu_text = menu_text.replace(news_old, news_new).replace(community_old, community_new)
 
-print("Launcher overlay applied; namespace preserved; MobileGlues-compatible renderer and Minecraft links configured.")
+# Add Installations and Skins actions wired to the existing profile/editor backend and
+# Minecraft account skin management page.
+binding_old = 'mVersionSpinner = view.findViewById(R.id.mc_version_spinner);'
+binding_new = binding_old + '\n\n        Button mInstallationsButton = view.findViewById(R.id.installations_button);\n        Button mSkinsButton = view.findViewById(R.id.skins_button);'
+if binding_old not in menu_text:
+    raise SystemExit("Could not find version spinner binding")
+menu_text = menu_text.replace(binding_old, binding_new, 1)
+
+listener_old = 'mEditProfileButton.setOnClickListener(v -> mVersionSpinner.openProfileEditor(requireActivity()));'
+listener_new = listener_old + '\n        mInstallationsButton.setOnClickListener(v -> mVersionSpinner.openProfileEditor(requireActivity()));\n        mSkinsButton.setOnClickListener(v -> Tools.openURL(requireActivity(), "https://www.minecraft.net/en-us/msaprofile/mygames/editskin"));'
+if listener_old not in menu_text:
+    raise SystemExit("Could not find profile-editor listener")
+menu_text = menu_text.replace(listener_old, listener_new, 1)
+menu.write_text(menu_text)
+
+print("Launcher overlay applied; namespace preserved; MobileGlues-compatible renderer, news/site links, installations and skins actions configured.")
 PY
 
 echo "Overlay and branding patches applied to temporary engine checkout: $ENGINE"
