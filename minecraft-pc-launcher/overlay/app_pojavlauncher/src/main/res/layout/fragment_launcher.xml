@@ -229,6 +229,38 @@
                 app:layout_constraintTop_toBottomOf="@id/installations_button" />
 
             <com.kdt.mcgui.LauncherMenuButton
+                android:id="@+id/accounts_button"
+                style="@style/LauncherMenuButton.Universal"
+                android:layout_width="match_parent"
+                android:layout_height="58dp"
+                android:layout_marginTop="6dp"
+                android:background="@drawable/launcher_nav_item_bg"
+                android:drawableStart="@drawable/ic_edit_profile"
+                android:gravity="center_vertical"
+                android:paddingStart="14dp"
+                android:text="Accounts"
+                android:textAllCaps="false"
+                android:textColor="#F1F1F1"
+                android:textSize="13sp"
+                app:layout_constraintTop_toBottomOf="@id/skins_button" />
+
+            <com.kdt.mcgui.LauncherMenuButton
+                android:id="@+id/settings_shortcut_button"
+                style="@style/LauncherMenuButton.Universal"
+                android:layout_width="match_parent"
+                android:layout_height="58dp"
+                android:layout_marginTop="6dp"
+                android:background="@drawable/launcher_nav_item_bg"
+                android:drawableStart="@drawable/ic_px_sliders"
+                android:gravity="center_vertical"
+                android:paddingStart="14dp"
+                android:text="Settings"
+                android:textAllCaps="false"
+                android:textColor="#F1F1F1"
+                android:textSize="13sp"
+                app:layout_constraintTop_toBottomOf="@id/accounts_button" />
+
+            <com.kdt.mcgui.LauncherMenuButton
                 android:id="@+id/custom_control_button"
                 style="@style/LauncherMenuButton.Universal"
                 android:layout_width="match_parent"
