@@ -46,6 +46,16 @@ jobs:
           PY
           test -f /tmp/first-dragon-source/first-dragon-build/build.gradle
           test -f /tmp/first-dragon-source/first-dragon-build/src/main/java/dev/dragonfirst/DragonFirstState.java
+      - name: Inspect collision and portal rules before patch
+        shell: bash
+        run: |
+          ROOT=/tmp/first-dragon-source/first-dragon-build/src/main/java/dev/dragonfirst
+          for F in "$ROOT/mixin/BlockItemMixin.java" "$ROOT/mixin/EnderDragonMixin.java" "$ROOT/mixin/EndPortalBlockMixin.java" "$ROOT/mixin/DragonFightMixin.java"; do
+            echo "===== SOURCE $F ====="
+            cat "$F"
+          done
+          echo "===== SOURCE DragonFirstState key members ====="
+          grep -nE 'portal|Portal|destroy|Destroy|placed|Placed|block|Block|encounter|Encounter|canUsePortal|tickPortal' "$ROOT/DragonFirstState.java" | head -220
       - name: Apply First Dragon 1.0.3 fixes
         shell: bash
         run: |
