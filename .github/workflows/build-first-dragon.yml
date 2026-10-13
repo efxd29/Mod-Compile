@@ -2,7 +2,7 @@ name: Build First Dragon 26.3
 on:
   push:
     paths:
-      - 'zips/first-dragon-26.3-1.0.1.zip.b64'
+      - 'zips/trigger-first-dragon-build'
   workflow_dispatch:
 
 permissions:
@@ -21,7 +21,7 @@ jobs:
       - name: Decode source project
         shell: bash
         run: |
-          base64 --decode zips/first-dragon-26.3-1.0.1.zip.b64 > /tmp/first-dragon-source.zip
+          cat zips/first-dragon-project-part*.b64 | base64 --decode > /tmp/first-dragon-source.zip
           mkdir -p /tmp/first-dragon-source
           unzip -q /tmp/first-dragon-source.zip -d /tmp/first-dragon-source
           test -f /tmp/first-dragon-source/first-dragon-build/build.gradle
