@@ -24,6 +24,8 @@ jobs:
           cat zips/first-dragon-project-part*.b64 | base64 --decode > /tmp/first-dragon-source.zip
           mkdir -p /tmp/first-dragon-source
           unzip -q /tmp/first-dragon-source.zip -d /tmp/first-dragon-source
+          SRC=/tmp/first-dragon-source/first-dragon-build/src/main/java/dev/dragonfirst/DragonFirstState.java
+          sed -i 's/import net.minecraft.world.entity.EntityType;/import net.minecraft.world.entity.EntityTypes;/; s/EntityType.END_CRYSTAL/EntityTypes.END_CRYSTAL/' "$SRC"
           test -f /tmp/first-dragon-source/first-dragon-build/build.gradle
           test -f /tmp/first-dragon-source/first-dragon-build/src/main/java/dev/dragonfirst/DragonFirstState.java
       - name: Install Gradle 9.7.1
