@@ -38,6 +38,39 @@ jobs:
         working-directory: /tmp/first-dragon-source/first-dragon-build
         shell: bash
         run: gradle build --no-daemon --console=plain
+      - name: Stage JAR before runtime test
+        shell: bash
+        run: |
+          mkdir -p out
+          JAR="$(find /tmp/first-dragon-source/first-dragon-build/build/libs -maxdepth 1 -type f -name '*.jar' ! -name '*sources*' ! -name '*dev*' | head -1)"
+          test -n "$JAR"
+          cp "$JAR" out/First-Dragon-26.3-1.0.1.jar
+      - name: Smoke-test on a real Fabric 26.3 server
+        shell: bash
+        run: |
+          set -euo pipefail
+          TEST=/tmp/first-dragon-runtime-test
+          mkdir -p "$TEST/mods"
+          cp out/First-Dragon-26.3-1.0.1.jar "$TEST/mods/"
+          echo "eula=true" > "$TEST/eula.txt"
+          curl --fail --location --retry 3 --retry-delay 2 \
+            "https://meta.fabricmc.net/v2/versions/loader/26.3/0.19.5/1.1.2/server/jar" \
+            -o "$TEST/fabric-server-launch.jar"
+          cd "$TEST"
+          set +e
+          timeout 90s java -Xms256M -Xmx2G -jar fabric-server-launch.jar nogui > runtime.log 2>&1
+          RC=$?
+          set -e
+          cat runtime.log
+          if grep -Eqi "Mixin apply failed|InvalidInjectionException|InjectionError|Failed to launch|Could not execute entrypoint|Exception in thread|NoClassDefFoundError|ClassNotFoundException" runtime.log; then
+            echo "First Dragon runtime smoke test found a startup error."
+            exit 1
+          fi
+          if ! grep -Eqi "Done \([0-9.]+s\)!|Done \([0-9.]+ seconds\)" runtime.log; then
+            echo "Fabric server did not reach the ready marker; exit code $RC."
+            exit 1
+          fi
+          grep -E "Loading Minecraft|First Dragon|DragonFirst|Done \(" runtime.log || true
       - name: Verify and stage JAR
         shell: bash
         run: |
