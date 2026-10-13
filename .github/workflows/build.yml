@@ -118,6 +118,8 @@ jobs:
           for z in $list; do
             n=$(basename "$z" .zip); mkdir -p "$OUT/$n" "work/$n"
             if ! unzip -q -o "$z" -d "work/$n"; then echo "unzip gagal" > "$OUT/$n/ERROR.txt"; echo "✗ $n (zip rusak)" >> work/summary.txt; continue; fi
+            srcfix="work/$n/mobhp/src/main/java/dev/mobhp/MobHpMod.java"
+            if [ -f "$srcfix" ]; then sed -i 's/entity\.getTags()/entity.getCommandTags()/g' "$srcfix"; fi
             f=$(find "work/$n" -maxdepth 3 \( -name build.gradle -o -name build.gradle.kts -o -name pom.xml \) | head -1)
             if [ -z "$f" ]; then echo "build.gradle atau pom.xml tidak ketemu di zip" > "$OUT/$n/ERROR.txt"; echo "✗ $n (bukan project)" >> work/summary.txt; continue; fi
             cd "$(dirname "$f")"
