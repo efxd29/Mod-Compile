@@ -79,7 +79,7 @@ jobs:
               jset "$jv"
               echo ">>> [$n] Java $jv | Gradle $g"
               if [ "$g" = orig ]; then chmod +x gradlew; cmd=./gradlew; else cmd=$(getgradle "$g") || continue; fi
-              $cmd build --no-daemon --console=plain > "$log" 2>&1; rc=$?
+              if $cmd build --no-daemon --console=plain > "$log" 2>&1; then rc=0; else rc=$?; fi
               tail -3 "$log"
               [ $rc -eq 0 ] && return 0
               grep -qE "compileJava.*FAILED|error:" "$log" && return 2
