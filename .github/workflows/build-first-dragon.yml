@@ -26,6 +26,11 @@ jobs:
           unzip -q /tmp/first-dragon-source.zip -d /tmp/first-dragon-source
           SRC=/tmp/first-dragon-source/first-dragon-build/src/main/java/dev/dragonfirst/DragonFirstState.java
           sed -i 's/import net.minecraft.world.entity.EntityType;/import net.minecraft.world.entity.EntityTypes;/; s/EntityType.END_CRYSTAL/EntityTypes.END_CRYSTAL/' "$SRC"
+          PROPS=/tmp/first-dragon-source/first-dragon-build/gradle.properties
+          sed -i 's/^version=1.0.1$/version=1.0.2/' "$PROPS"
+          MIXINS=/tmp/first-dragon-source/first-dragon-build/src/main/resources/dragonfirst.mixins.json
+          sed -i '/"BlockStateCollisionMixin",/d' "$MIXINS"
+          rm -f /tmp/first-dragon-source/first-dragon-build/src/main/java/dev/dragonfirst/mixin/BlockStateCollisionMixin.java
           test -f /tmp/first-dragon-source/first-dragon-build/build.gradle
           test -f /tmp/first-dragon-source/first-dragon-build/src/main/java/dev/dragonfirst/DragonFirstState.java
       - name: Install Gradle 9.7.1
@@ -44,14 +49,14 @@ jobs:
           mkdir -p out
           JAR="$(find /tmp/first-dragon-source/first-dragon-build/build/libs -maxdepth 1 -type f -name '*.jar' ! -name '*sources*' ! -name '*dev*' | head -1)"
           test -n "$JAR"
-          cp "$JAR" out/First-Dragon-26.3-1.0.1.jar
+          cp "$JAR" out/First-Dragon-26.3-1.0.2.jar
       - name: Smoke-test on a real Fabric 26.3 server
         shell: bash
         run: |
           set -euo pipefail
           TEST=/tmp/first-dragon-runtime-test
           mkdir -p "$TEST/mods"
-          cp out/First-Dragon-26.3-1.0.1.jar "$TEST/mods/"
+          cp out/First-Dragon-26.3-1.0.2.jar "$TEST/mods/"
           curl --fail --location --retry 3 --retry-delay 2 "https://maven.fabricmc.net/net/fabricmc/fabric-api/fabric-api/0.162.0+26.3/fabric-api-0.162.0+26.3.jar" -o "$TEST/mods/fabric-api-0.162.0+26.3.jar"
           echo "eula=true" > "$TEST/eula.txt"
           curl --fail --location --retry 3 --retry-delay 2 \
@@ -79,13 +84,13 @@ jobs:
           find /tmp/first-dragon-source/first-dragon-build/build/libs -maxdepth 1 -type f -name '*.jar' ! -name '*sources*' ! -name '*dev*' -print
           JAR="$(find /tmp/first-dragon-source/first-dragon-build/build/libs -maxdepth 1 -type f -name '*.jar' ! -name '*sources*' ! -name '*dev*' | head -1)"
           test -n "$JAR"
-          cp "$JAR" out/First-Dragon-26.3-1.0.1.jar
-          unzip -t out/First-Dragon-26.3-1.0.1.jar
-          unzip -p out/First-Dragon-26.3-1.0.1.jar fabric.mod.json
-          unzip -l out/First-Dragon-26.3-1.0.1.jar
+          cp "$JAR" out/First-Dragon-26.3-1.0.2.jar
+          unzip -t out/First-Dragon-26.3-1.0.2.jar
+          unzip -p out/First-Dragon-26.3-1.0.2.jar fabric.mod.json
+          unzip -l out/First-Dragon-26.3-1.0.2.jar
       - uses: actions/upload-artifact@v4
         with:
-          name: First-Dragon-26.3-1.0.1
-          path: out/First-Dragon-26.3-1.0.1.jar
+          name: First-Dragon-26.3-1.0.2
+          path: out/First-Dragon-26.3-1.0.2.jar
           if-no-files-found: error
           retention-days: 7
