@@ -31,6 +31,16 @@ jobs:
           MIXINS=/tmp/first-dragon-source/first-dragon-build/src/main/resources/dragonfirst.mixins.json
           sed -i '/"BlockStateCollisionMixin",/d' "$MIXINS"
           rm -f /tmp/first-dragon-source/first-dragon-build/src/main/java/dev/dragonfirst/mixin/BlockStateCollisionMixin.java
+          python - <<'PY'
+          from pathlib import Path
+          root = Path("/tmp/first-dragon-source/first-dragon-build")
+          mixins = root / "src/main/resources/dragonfirst.mixins.json"
+          text = mixins.read_text()
+          text = text.replace('    "BlockStateCollisionMixin",\n', '')
+          mixins.write_text(text)
+          (root / "src/main/java/dev/dragonfirst/mixin/BlockStateCollisionMixin.java").unlink(missing_ok=True)
+          print("Removed startup-crashing collision mixin.")
+          PY
           test -f /tmp/first-dragon-source/first-dragon-build/build.gradle
           test -f /tmp/first-dragon-source/first-dragon-build/src/main/java/dev/dragonfirst/DragonFirstState.java
       - name: Install Gradle 9.7.1
