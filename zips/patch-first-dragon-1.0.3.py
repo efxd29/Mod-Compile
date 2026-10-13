@@ -71,7 +71,8 @@ replacement = '''    /** Restore the ten End-spike crystals for a player's first
                     BlockPos pos = new BlockPos(x, y, z);
                     BlockState state = end.getBlockState(pos);
                     if (!(state.is(Blocks.OBSIDIAN) || state.is(Blocks.BEDROCK))) continue;
-                    if (!end.getBlockState(pos.above()).isAir()) continue;
+                    BlockState above = end.getBlockState(pos.above());
+                    if (above.is(Blocks.OBSIDIAN) || above.is(Blocks.BEDROCK)) continue;
                     int distance = dx * dx + dz * dz;
                     if (y > bestY || (y == bestY && distance < bestDistance)) {
                         best = pos.immutable();
