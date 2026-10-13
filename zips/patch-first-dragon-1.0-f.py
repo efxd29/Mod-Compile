@@ -172,10 +172,10 @@ rep('''        for (ServerPlayer player : players) {
 # It is needed for tracked portal cells that are virtual AIR on the server, while real
 # END_PORTAL blocks still rely on vanilla's own entity-inside method.
 if 'import net.minecraft.world.phys.AABB;' not in s:
-    import_anchor = 'import net.minecraft.world.level.block.state.BlockState;\\n'
+    import_anchor = 'import net.minecraft.world.level.block.state.BlockState;\n'
     if s.count(import_anchor) != 1:
         raise RuntimeError('could not find BlockState import to add AABB import')
-    s = s.replace(import_anchor, import_anchor + 'import net.minecraft.world.phys.AABB;\\n')
+    s = s.replace(import_anchor, import_anchor + 'import net.minecraft.world.phys.AABB;\n')
 
 # Begin distinguishing the actual dragon-spawn moment from the encounter flag.
 # Player-placed blocks are protected if they were placed before the dragon entity exists,
