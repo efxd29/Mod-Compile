@@ -158,42 +158,24 @@ rep('''        for (ServerPlayer player : players) {
     '''        for (ServerPlayer player : players) {
             if (player.level() != end || !canUsePortal(player)) continue;
             for (BlockPos pos : portalBlocks) {
-                double dx = player.getX() - (pos.getX() + 0.5D);
-                double dz = player.getZ() - (pos.getZ() + 0.5D);
-                double feetY = player.getY();
-                // Portal block coordinates describe the block, not its center. Include the
-                // player's feet as they step/fall into the portal plane.
-                if (Math.abs(dx) > 0.48D || Math.abs(dz) > 0.48D
-                        || feetY < pos.getY() - 0.25D || feetY > pos.getY() + 2.5D) continue;
+                // Real END_PORTAL blocks use vanilla's normal entity-inside handling.
+                if (end.getBlockState(pos).is(Blocks.END_PORTAL)) continue;
+                AABB portalBox = new AABB(pos.getX(), pos.getY(), pos.getZ(),
+                        pos.getX() + 1.0D, pos.getY() + 1.0D, pos.getZ() + 1.0D);
+                // For virtual portal cells, require actual bounding-box intersection with the
+                // one-block portal volume; standing on the bedrock rim above cannot trigger it.
+                if (!player.getBoundingBox().intersects(portalBox)) continue;
                 try {''',
     'portal touch fallback')
 
-# Remove the synthetic portal touch test entirely. It used a broad Y range and could
-# teleport a crouching player standing on the bedrock rim above the real portal.
-call = '        processVirtualPortalTouches(end, endPlayers);\n'
-if s.count(call) != 1:
-    raise RuntimeError(f'virtual portal call: expected one match, found {s.count(call)}')
-s = s.replace(call, '        // Vanilla EndPortalBlock.entityInside is the only portal trigger.\n')
-signature = '    private static void processVirtualPortalTouches('
-start = s.find(signature)
-if start < 0:
-    raise RuntimeError('processVirtualPortalTouches method not found')
-brace = s.find('{', start)
-if brace < 0:
-    raise RuntimeError('processVirtualPortalTouches opening brace not found')
-depth = 0
-end = -1
-for i in range(brace, len(s)):
-    if s[i] == '{': depth += 1
-    elif s[i] == '}':
-        depth -= 1
-        if depth == 0:
-            end = i + 1
-            break
-if end < 0:
-    raise RuntimeError('processVirtualPortalTouches closing brace not found')
-while end < len(s) and s[end] == '\n': end += 1
-s = s[:start] + s[end:]
+# Preserve the virtual portal fallback only for a true block/entity AABB intersection.
+# It is needed for tracked portal cells that are virtual AIR on the server, while real
+# END_PORTAL blocks still rely on vanilla's own entity-inside method.
+if 'import net.minecraft.world.phys.AABB;' not in s:
+    import_anchor = 'import net.minecraft.world.level.block.state.BlockState;\\n'
+    if s.count(import_anchor) != 1:
+        raise RuntimeError('could not find BlockState import to add AABB import')
+    s = s.replace(import_anchor, import_anchor + 'import net.minecraft.world.phys.AABB;\\n')
 
 # Begin distinguishing the actual dragon-spawn moment from the encounter flag.
 # Player-placed blocks are protected if they were placed before the dragon entity exists,
