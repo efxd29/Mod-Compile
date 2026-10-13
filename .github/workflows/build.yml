@@ -28,6 +28,7 @@ jobs:
           SHA: ${{ github.sha }}
         run: |
           set -u
+          set +e
           ROOT=$PWD; OUT=$ROOT/out; mkdir -p "$OUT" work "$HOME/gr"
           jh() { printenv "JAVA_HOME_$1_X64"; }
           jset() { export JAVA_HOME="$(jh "$1")"; export PATH="$JAVA_HOME/bin:$PATH"; }
