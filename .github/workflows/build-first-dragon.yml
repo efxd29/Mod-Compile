@@ -26,6 +26,9 @@ jobs:
           unzip -q /tmp/first-dragon-source.zip -d /tmp/first-dragon-source
           SRC=/tmp/first-dragon-source/first-dragon-build/src/main/java/dev/dragonfirst/DragonFirstState.java
           sed -i 's/import net.minecraft.world.entity.EntityType;/import net.minecraft.world.entity.EntityTypes;/; s/EntityType.END_CRYSTAL/EntityTypes.END_CRYSTAL/' "$SRC"
+          MIXINS=/tmp/first-dragon-source/first-dragon-build/src/main/resources/dragonfirst.mixins.json
+          sed -i '/"BlockStateCollisionMixin",/d' "$MIXINS"
+          rm -f /tmp/first-dragon-source/first-dragon-build/src/main/java/dev/dragonfirst/mixin/BlockStateCollisionMixin.java
           PROPS=/tmp/first-dragon-source/first-dragon-build/gradle.properties
           sed -i 's/^version=1.0.1$/version=1.0.2/' "$PROPS"
           MIXINS=/tmp/first-dragon-source/first-dragon-build/src/main/resources/dragonfirst.mixins.json
