@@ -51,6 +51,27 @@ jobs:
         run: |
           python zips/patch-first-dragon-1.0-f.py /tmp/first-dragon-source/first-dragon-build
           grep -nE 'version=|firstWinTowerCrystalsApplied|lastPortalPermission|completedRespawn.put\(id' /tmp/first-dragon-source/first-dragon-build/gradle.properties /tmp/first-dragon-source/first-dragon-build/src/main/java/dev/dragonfirst/DragonFirstState.java
+      - name: Install requested mod icon
+        shell: bash
+        run: |
+          ROOT=/tmp/first-dragon-source/first-dragon-build/src/main/resources
+          mkdir -p "$ROOT/assets/dragonfirst"
+          base64 --decode zips/first-dragon-icon-64.b64 > "$ROOT/assets/dragonfirst/icon.png"
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root = Path("/tmp/first-dragon-source/first-dragon-build/src/main/resources")
+          meta = root / "fabric.mod.json"
+          data = json.loads(meta.read_text())
+          data["version"] = "1.0-f"
+          data["icon"] = "assets/dragonfirst/icon.png"
+          meta.write_text(json.dumps(data, indent=2) + "\\n")
+          icon = root / "assets/dragonfirst/icon.png"
+          raw = icon.read_bytes()
+          if not raw.startswith(bytes.fromhex("89504e470d0a1a0a")):
+              raise SystemExit("Requested icon is not a valid PNG.")
+          print(f"Installed square icon: {len(raw)} bytes")
+          PY
       - name: Install Gradle 9.7.1
         shell: bash
         run: |
