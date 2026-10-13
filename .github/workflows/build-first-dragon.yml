@@ -26,12 +26,12 @@ jobs:
           unzip -q /tmp/first-dragon-source.zip -d /tmp/first-dragon-source
           test -f /tmp/first-dragon-source/first-dragon-build/build.gradle
           test -f /tmp/first-dragon-source/first-dragon-build/src/main/java/dev/dragonfirst/DragonFirstState.java
-      - name: Install Gradle 9.8
+      - name: Install Gradle 9.7.1
         shell: bash
         run: |
-          curl --fail --location --retry 3 --retry-delay 2 https://services.gradle.org/distributions/gradle-9.8-bin.zip -o /tmp/gradle.zip
+          curl --fail --location --retry 3 --retry-delay 2 https://services.gradle.org/distributions/gradle-9.7.1-bin.zip -o /tmp/gradle.zip
           unzip -q /tmp/gradle.zip -d "$HOME"
-          echo "$HOME/gradle-9.8/bin" >> "$GITHUB_PATH"
+          echo "$HOME/gradle-9.7.1/bin" >> "$GITHUB_PATH"
       - name: Compile mod
         working-directory: /tmp/first-dragon-source/first-dragon-build
         shell: bash
