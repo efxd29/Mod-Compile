@@ -1,0 +1,55 @@
+name: Build First Dragon 26.3
+on:
+  push:
+    paths:
+      - 'zips/first-dragon-26.3-1.0.1.zip.b64'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - name: Decode source project
+        shell: bash
+        run: |
+          base64 --decode zips/first-dragon-26.3-1.0.1.zip.b64 > /tmp/first-dragon-source.zip
+          mkdir -p /tmp/first-dragon-source
+          unzip -q /tmp/first-dragon-source.zip -d /tmp/first-dragon-source
+          test -f /tmp/first-dragon-source/first-dragon-build/build.gradle
+          test -f /tmp/first-dragon-source/first-dragon-build/src/main/java/dev/dragonfirst/DragonFirstState.java
+      - name: Install Gradle 9.8
+        shell: bash
+        run: |
+          curl --fail --location --retry 3 --retry-delay 2 https://services.gradle.org/distributions/gradle-9.8-bin.zip -o /tmp/gradle.zip
+          unzip -q /tmp/gradle.zip -d "$HOME"
+          echo "$HOME/gradle-9.8/bin" >> "$GITHUB_PATH"
+      - name: Compile mod
+        working-directory: /tmp/first-dragon-source/first-dragon-build
+        shell: bash
+        run: gradle build --no-daemon --console=plain
+      - name: Verify and stage JAR
+        shell: bash
+        run: |
+          mkdir -p out
+          find /tmp/first-dragon-source/first-dragon-build/build/libs -maxdepth 1 -type f -name '*.jar' ! -name '*sources*' ! -name '*dev*' -print
+          JAR="$(find /tmp/first-dragon-source/first-dragon-build/build/libs -maxdepth 1 -type f -name '*.jar' ! -name '*sources*' ! -name '*dev*' | head -1)"
+          test -n "$JAR"
+          cp "$JAR" out/First-Dragon-26.3-1.0.1.jar
+          unzip -t out/First-Dragon-26.3-1.0.1.jar
+          unzip -p out/First-Dragon-26.3-1.0.1.jar fabric.mod.json
+          unzip -l out/First-Dragon-26.3-1.0.1.jar
+      - uses: actions/upload-artifact@v4
+        with:
+          name: First-Dragon-26.3-1.0.1
+          path: out/First-Dragon-26.3-1.0.1.jar
+          if-no-files-found: error
+          retention-days: 7
