@@ -65,7 +65,7 @@ jobs:
           data = json.loads(meta.read_text())
           data["version"] = "1.0-f"
           data["icon"] = "assets/dragonfirst/icon.png"
-          meta.write_text(json.dumps(data, indent=2) + "\\n")
+          meta.write_text(json.dumps(data, indent=2) + "\n")
           icon = root / "assets/dragonfirst/icon.png"
           raw = icon.read_bytes()
           if not raw.startswith(bytes.fromhex("89504e470d0a1a0a")):
