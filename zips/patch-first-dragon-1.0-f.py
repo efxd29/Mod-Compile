@@ -170,10 +170,10 @@ rep('''        for (ServerPlayer player : players) {
 
 # Remove the synthetic portal touch test entirely. It used a broad Y range and could
 # teleport a crouching player standing on the bedrock rim above the real portal.
-call = '        processVirtualPortalTouches(end, endPlayers);\\n'
+call = '        processVirtualPortalTouches(end, endPlayers);\n'
 if s.count(call) != 1:
     raise RuntimeError(f'virtual portal call: expected one match, found {s.count(call)}')
-s = s.replace(call, '        // Vanilla EndPortalBlock.entityInside is the only portal trigger.\\n')
+s = s.replace(call, '        // Vanilla EndPortalBlock.entityInside is the only portal trigger.\n')
 signature = '    private static void processVirtualPortalTouches('
 start = s.find(signature)
 if start < 0:
@@ -192,7 +192,7 @@ for i in range(brace, len(s)):
             break
 if end < 0:
     raise RuntimeError('processVirtualPortalTouches closing brace not found')
-while end < len(s) and s[end] == '\\n': end += 1
+while end < len(s) and s[end] == '\n': end += 1
 s = s[:start] + s[end:]
 
 # Begin distinguishing the actual dragon-spawn moment from the encounter flag.
@@ -212,7 +212,7 @@ props = BUILD_ROOT / 'gradle.properties'
 props_text = props.read_text()
 props_text, count = re.subn(r'^version=.*$', 'version=1.0-f', props_text, count=1, flags=re.MULTILINE)
 if count != 1:
-    raise RuntimeError('Could not set mod version to 1.0.3')
+    raise RuntimeError('Could not set mod version to 1.0-f')
 props.write_text(props_text)
 mixins_path = BUILD_ROOT / 'src/main/resources/dragonfirst.mixins.json'
 mixins = json.loads(mixins_path.read_text())
