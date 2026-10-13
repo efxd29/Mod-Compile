@@ -1,1 +1,1 @@
-Build First Dragon 1.0-f: vanilla portal contact only; block tracking starts only after the new dragon entity has spawned; add supplied 64x64 icon.
+Rebuild First Dragon 1.0-f with strict bounding-box portal contact, post-spawn-only block tracking, and supplied icon.
