@@ -104,8 +104,8 @@ anchor = """        ServerLifecycleEvents.SERVER_STOPPED.register(server -> {
 """
 addition = anchor + """
         // Avoid silent no-op Player.tick/PlayerList mixins on mappings where injection targets move.
-        ServerTickEvents.END_WORLD_TICK.register(world -> {
-            for (ServerPlayer player : world.players()) {
+        ServerTickEvents.END_SERVER_TICK.register(server -> {
+            for (ServerPlayer player : server.getPlayerList().getPlayers()) {
                 getPlayerStatusManagerServer().tickPlayer(player);
             }
         });
@@ -162,5 +162,15 @@ replace_once(manager_file,
         }
 """,
     "GUI transition wakes idle status")
+
+# Minecraft 26.3 PoseStack exposes rotateDegrees rather than mulPose(Quaternionf).
+replace_once("src/main/java/com/corosus/watut/client/screen/DynamicScreenRenderer.java",
+    "poseStack.mulPose(Axis.YP.rotationDegrees(-player.yBodyRot));",
+    "poseStack.rotateDegrees(Axis.YP, -player.yBodyRot);",
+    "26.3 body rotation API")
+replace_once("src/main/java/com/corosus/watut/client/screen/DynamicScreenRenderer.java",
+    "poseStack.mulPose(Axis.XP.rotationDegrees(20.0F));",
+    "poseStack.rotateDegrees(Axis.XP, 20.0F);",
+    "26.3 tilt rotation API")
 
 print("WATUT MC 26.3 activity patch applied.")
