@@ -33,16 +33,16 @@ for key, val in {
         raise SystemExit(f"failed to set {key}: expected one property, got {n}")
 props.write_text(ptext)
 
-# Use the public Modrinth Maven mirror for CoroUtil 1.21.4 as compile-time API only.
-# Runtime uses the separately installed CoroUtil MC 26.3 JAR.
+# Use the locally staged CoroUtil jar built with the matching Minecraft 26.3 official namespace.
+# It is a compile-only dependency; the final WATUT JAR still declares CoroUtil as a separate required mod.
 gradle = root / "build_fabric.gradle"
 gtext = gradle.read_text()
 gtext = gtext.replace("id 'net.fabricmc.fabric-loom' version '1.17-SNAPSHOT'", "id 'net.fabricmc.fabric-loom' version '1.17.21'")
-gtext = gtext.replace("repositories {", 'repositories {\n\tmaven { url "https://api.modrinth.com/maven" }\n\tmavenCentral()', 1)
+gtext = gtext.replace("repositories {", "repositories {\n\tmavenCentral()", 1)
 old_dep = 'implementation "com.corosus.coroutil:CoroUtil:' + "${project.minecraft_version}" + '.0-' + "${project.coroutil_version}" + '"'
 if gtext.count(old_dep) != 1:
     raise SystemExit("CoroUtil dependency pattern not found exactly once")
-gtext = gtext.replace(old_dep, 'modImplementation "maven.modrinth:rLLJ1OZM:kGU8LxQf"')
+gtext = gtext.replace(old_dep, 'implementation files("libs/coroutil-fabric-26.3-1.3.8.jar")')
 gtext = gtext.replace('implementation "fuzs.forgeconfigapiport:forgeconfigapiport-fabric:' + "${project.forgeconfigapiport_version}" + '"\n', '')
 gradle.write_text(gtext)
 
