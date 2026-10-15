@@ -42,7 +42,7 @@ gtext = gtext.replace("repositories {", 'repositories {\n\tmaven { url "https://
 old_dep = 'implementation "com.corosus.coroutil:CoroUtil:' + "${project.minecraft_version}" + '.0-' + "${project.coroutil_version}" + '"'
 if gtext.count(old_dep) != 1:
     raise SystemExit("CoroUtil dependency pattern not found exactly once")
-gtext = gtext.replace(old_dep, 'implementation "maven.modrinth:rLLJ1OZM:kGU8LxQf"')
+gtext = gtext.replace(old_dep, 'modImplementation "maven.modrinth:rLLJ1OZM:kGU8LxQf"')
 gtext = gtext.replace('implementation "fuzs.forgeconfigapiport:forgeconfigapiport-fabric:' + "${project.forgeconfigapiport_version}" + '"\n', '')
 gradle.write_text(gtext)
 
