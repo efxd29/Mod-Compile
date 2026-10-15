@@ -47,7 +47,9 @@ jobs:
         run: |
           set -euo pipefail
           chmod +x gradlew
-          ./gradlew -b build_fabric.gradle clean build --no-daemon --console=plain --stacktrace
+          # Gradle 9 no longer accepts the legacy -b switch; use the selected Fabric build file as build.gradle.
+          cp build_fabric.gradle build.gradle
+          ./gradlew clean build --no-daemon --console=plain --stacktrace
 
       - name: Validate JAR metadata and tick event wiring
         shell: bash
