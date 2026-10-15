@@ -27,7 +27,7 @@ for key, val in {
     "mod_version": "26.3-1.2.5-activityfix1",
 }.items():
     import re
-    pattern = rf"(?m)^{re.escape(key)}=[^\n]*$"
+    pattern = rf"(?m)^{re.escape(key)}\s*=\s*[^\n]*$"
     ptext, n = re.subn(pattern, f"{key}={val}", ptext)
     if n != 1:
         raise SystemExit(f"failed to set {key}: expected one property, got {n}")
