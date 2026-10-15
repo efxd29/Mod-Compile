@@ -31,7 +31,7 @@ jobs:
           git clone --depth 1 --branch 26.2 https://github.com/sdrumati04/WATUTfork.git /tmp/watut
           mkdir -p /tmp/watut/libs
           curl --fail --location --retry 3 --retry-delay 2 \
-            'https://tmpfiles.org/dl/w1AnZaVG2ubV/coroutil-fabric-26.3-1.3.8.jar' \
+            'https://tmpfiles.org/dl/1792040305.3eca7f7a6d992a1b/w1AnZaVG2ubV/coroutil-fabric-26.3-1.3.8.jar' \
             -o /tmp/watut/libs/coroutil-fabric-26.3-1.3.8.jar
           unzip -t /tmp/watut/libs/coroutil-fabric-26.3-1.3.8.jar >/dev/null
           python zips/patch-watut-263.py /tmp/watut
