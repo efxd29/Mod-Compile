@@ -24,16 +24,11 @@ jobs:
           distribution: temurin
           java-version: '25'
 
-      - name: Download WATUT source and compile-only CoroUtil API
+      - name: Download and patch WATUT source
         shell: bash
         run: |
           set -euo pipefail
           git clone --depth 1 --branch 26.2 https://github.com/sdrumati04/WATUTfork.git /tmp/watut
-          mkdir -p /tmp/watut/libs
-          curl --fail --location --retry 3 --retry-delay 2 \
-            'https://mediafilez.forgecdn.net/files/6325/054/coroutil-fabric-1.21.4-1.3.8.jar' \
-            -o /tmp/watut/libs/coroutil-fabric-1.21.4-1.3.8.jar
-          unzip -t /tmp/watut/libs/coroutil-fabric-1.21.4-1.3.8.jar >/dev/null
           python zips/patch-watut-263.py /tmp/watut
           test -f /tmp/watut/src/main/java/com/corosus/watut/client/status/PlayerStatusClientManager.java
 

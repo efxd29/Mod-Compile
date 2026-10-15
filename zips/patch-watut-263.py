@@ -33,18 +33,17 @@ for key, val in {
         raise SystemExit(f"failed to set {key}: expected one property, got {n}")
 props.write_text(ptext)
 
-# Use current Loom and the supplied old CoroUtil JAR strictly as a compile-time API.
-# Runtime is still provided by the user's separate CoroUtil 26.3 mod.
+# Use the public Modrinth Maven mirror for CoroUtil 1.21.4 as compile-time API only.
+# Runtime uses the separately installed CoroUtil MC 26.3 JAR.
 gradle = root / "build_fabric.gradle"
 gtext = gradle.read_text()
 gtext = gtext.replace("id 'net.fabricmc.fabric-loom' version '1.17-SNAPSHOT'", "id 'net.fabricmc.fabric-loom' version '1.17.21'")
-gtext = gtext.replace("repositories {", "repositories {\n\tmavenCentral()", 1)
-old_dep = 'implementation "com.corosus.coroutil:CoroUtil:${project.minecraft_version}.0-${project.coroutil_version}"'
+gtext = gtext.replace("repositories {", 'repositories {\n\tmaven { url "https://api.modrinth.com/maven" }\n\tmavenCentral()', 1)
+old_dep = 'implementation "com.corosus.coroutil:CoroUtil:' + "${project.minecraft_version}" + '.0-' + "${project.coroutil_version}" + '"'
 if gtext.count(old_dep) != 1:
     raise SystemExit("CoroUtil dependency pattern not found exactly once")
-gtext = gtext.replace(old_dep, 'implementation files("libs/coroutil-fabric-1.21.4-1.3.8.jar")')
-# CoroUtil itself provides the Forge Config API Port nested mod on the target setup.
-gtext = gtext.replace('implementation "fuzs.forgeconfigapiport:forgeconfigapiport-fabric:${project.forgeconfigapiport_version}"\n', '')
+gtext = gtext.replace(old_dep, 'implementation "maven.modrinth:rLLJ1OZM:kGU8LxQf"')
+gtext = gtext.replace('implementation "fuzs.forgeconfigapiport:forgeconfigapiport-fabric:' + "${project.forgeconfigapiport_version}" + '"\n', '')
 gradle.write_text(gtext)
 
 wrapper = root / "gradle/wrapper/gradle-wrapper.properties"
