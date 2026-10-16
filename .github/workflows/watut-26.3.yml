@@ -1,0 +1,97 @@
+name: WATUT full feature port for Minecraft 26.3
+
+on:
+  push:
+    branches: [watut-full-26.3]
+    paths:
+      - ".github/workflows/watut-26.3.yml"
+      - "port-watut-26.3/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  port-and-build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Checkout port recipe
+        uses: actions/checkout@v4
+        with:
+          ref: watut-full-26.3
+
+      - name: Set up Java 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      - name: Set up Gradle 9.7.1
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "9.7.1"
+
+      - name: Fetch complete upstream source trees
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch 1.21.0 https://github.com/Corosauce/CoroUtil.git CoroUtil
+          git clone --depth 1 --branch 1.21.0 https://github.com/Corosauce/WATUT.git WATUT
+
+      - name: Apply 26.3 build metadata without dropping original source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 port-watut-26.3/patch.py CoroUtil coroutil
+          python3 port-watut-26.3/patch.py WATUT watut
+          cp CoroUtil/build_fabric.gradle CoroUtil/build.gradle
+          cp WATUT/build_fabric.gradle WATUT/build.gradle
+
+      - name: Build CoroUtil against 26.3
+        id: coroutil
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          cd CoroUtil
+          gradle --no-daemon --console=plain clean build publishToMavenLocal 2>&1 | tee ../coroutil-build.log
+          echo "COROUTIL_RC=${PIPESTATUS[0]}" >> "$GITHUB_ENV"
+
+      - name: Build complete WATUT source against 26.3
+        id: watut
+        if: always()
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          cd WATUT
+          gradle --no-daemon --console=plain clean build 2>&1 | tee ../watut-build.log
+          echo "WATUT_RC=${PIPESTATUS[0]}" >> "$GITHUB_ENV"
+
+      - name: Package JARs, source snapshot, and diagnostics
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p artifacts/diagnostics artifacts/source
+          cp coroutil-build.log watut-build.log artifacts/diagnostics/ 2>/dev/null || true
+          cp CoroUtil/build/libs/*.jar artifacts/ 2>/dev/null || true
+          cp WATUT/build/libs/*.jar artifacts/ 2>/dev/null || true
+          cp -R CoroUtil/src WATUT/src artifacts/source/ 2>/dev/null || true
+          {
+            echo "Minecraft target: 26.3"
+            echo "Java: $(java -version 2>&1 | head -1)"
+            echo "CoroUtil build status: ${COROUTIL_RC:-unknown}"
+            echo "WATUT build status: ${WATUT_RC:-unknown}"
+            echo "Original WATUT source and resources are retained; no mini-rewrite is used."
+          } > artifacts/BUILD-STATUS.txt
+          find artifacts -type f -printf '%p %s bytes\n' | sort >> artifacts/BUILD-STATUS.txt
+
+      - name: Upload built JARs and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: WATUT-Minecraft-26.3-full-port
+          path: artifacts/
+          if-no-files-found: warn
+          retention-days: 30
