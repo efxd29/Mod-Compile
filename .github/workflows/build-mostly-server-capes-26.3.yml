@@ -330,6 +330,33 @@ jobs:
           set -euo pipefail
           cd /tmp/msc
           gradle build --no-daemon --stacktrace --console=plain 2>&1 | tee /tmp/msc-build.log
+      - name: Smoke-test on Fabric Minecraft 26.3 dedicated server
+        shell: bash
+        run: |
+          set -euo pipefail
+          TEST=/tmp/msc-runtime-test
+          mkdir -p "$TEST/mods"
+          JAR="$(find /tmp/msc/build/libs -maxdepth 1 -type f -name '*.jar' ! -name '*sources*' ! -name '*dev*' | head -1)"
+          test -n "$JAR"
+          cp "$JAR" "$TEST/mods/"
+          curl --fail --location --retry 3 --retry-delay 2 "https://maven.fabricmc.net/net/fabricmc/fabric-api/fabric-api/0.163.0+26.3/fabric-api-0.163.0+26.3.jar" -o "$TEST/mods/fabric-api-0.163.0+26.3.jar"
+          echo "eula=true" > "$TEST/eula.txt"
+          curl --fail --location --retry 3 --retry-delay 2 "https://meta.fabricmc.net/v2/versions/loader/26.3/0.19.5/1.1.2/server/jar" -o "$TEST/fabric-server-launch.jar"
+          cd "$TEST"
+          set +e
+          timeout 90s java -Xms256M -Xmx2G -jar fabric-server-launch.jar nogui > runtime.log 2>&1
+          RC=$?
+          set -e
+          cat runtime.log
+          if grep -Eqi "Mixin apply failed|InvalidInjectionException|InjectionError|Failed to launch|Could not execute entrypoint|Exception in thread|NoClassDefFoundError|ClassNotFoundException|UnsupportedClassVersionError" runtime.log; then
+            echo "Fabric 26.3 startup log contains a mod or mixin failure."
+            exit 1
+          fi
+          if ! grep -Eqi "Done \\([0-9.]+s\\)!|Done \\([0-9.]+ seconds\\)" runtime.log; then
+            echo "Fabric 26.3 server did not reach the ready marker; exit code $RC."
+            exit 1
+          fi
+          grep -E "Loading Minecraft|mostly_server_capes|MostlyServerCapes|Done \\(" runtime.log || true
       - name: Stage compiled JAR or diagnostics
         if: always()
         shell: bash
