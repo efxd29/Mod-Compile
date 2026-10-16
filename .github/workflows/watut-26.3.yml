@@ -60,7 +60,9 @@ jobs:
         run: |
           set +e
           cd CoroUtil
-          gradle --no-daemon --console=plain clean build publishToMavenLocal 2>&1 | tee ../coroutil-build.log
+          echo "### Patched Gradle configuration" | tee ../coroutil-build.log
+          grep -nE 'mappings|include\\(|implementation|publisher|components\\.java' build.gradle | tee -a ../coroutil-build.log || true
+          gradle --no-daemon --console=plain --stacktrace clean build publishToMavenLocal 2>&1 | tee -a ../coroutil-build.log
           rc=${PIPESTATUS[0]}
           echo "COROUTIL_RC=$rc" >> "$GITHUB_ENV"
           exit 0
@@ -73,7 +75,9 @@ jobs:
         run: |
           set +e
           cd WATUT
-          gradle --no-daemon --console=plain clean build 2>&1 | tee ../watut-build.log
+          echo "### Patched Gradle configuration" | tee ../watut-build.log
+          grep -nE 'mappings|include\\(|implementation|publisher|components\\.java' build.gradle | tee -a ../watut-build.log || true
+          gradle --no-daemon --console=plain --stacktrace clean build 2>&1 | tee -a ../watut-build.log
           rc=${PIPESTATUS[0]}
           echo "WATUT_RC=$rc" >> "$GITHUB_ENV"
           exit 0
