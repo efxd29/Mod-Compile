@@ -3,6 +3,7 @@ on:
   push:
     paths:
       - 'zips/antipopup-26.3-part*.b64'
+      - '.github/workflows/build-antipopup-26.3.yml'
   workflow_dispatch:
 
 permissions:
@@ -33,6 +34,21 @@ jobs:
           test -f "$ROOT/src/main/java/com/github/kaspiandev/antipopup/fabric/AntiPopup.java"
           grep -q '^minecraft_version=26.3$' "$ROOT/gradle.properties"
           grep -q '"minecraft": "~26.3"' "$ROOT/src/main/resources/fabric.mod.json"
+      - name: Adapt unsigned chat content API for 26.3
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          source = Path("/tmp/antipopup-source/antipopup/src/main/java/com/github/kaspiandev/antipopup/fabric/mixin/ServerCommonPacketListenerImplMixin.java")
+          text = source.read_text()
+          old = "Component content = chat.unsignedContent();"
+          new = "Component content = chat.unsignedContent().orElse(null);"
+          if old not in text:
+              raise SystemExit("Expected 26.2 unsignedContent call was not found.")
+          source.write_text(text.replace(old, new))
+          print("Updated Optional<Component> handling for Minecraft 26.3.")
+          PY
       - name: Install Gradle 9.7.1
         shell: bash
         run: |
