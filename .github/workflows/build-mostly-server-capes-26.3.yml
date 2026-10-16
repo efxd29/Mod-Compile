@@ -104,6 +104,147 @@ jobs:
           d.pop("suggests", None)
           meta.write_text(json.dumps(d, indent=2) + "\n")
           print("Prepared port:", d["version"], d["depends"])
+
+      - name: Apply 26.3 API and package migration
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd /tmp/msc
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          root=Path("src")
+          substitutions = [
+              ("net.minecraft.network.packet.s2c.play", "net.minecraft.network.protocol.game"),
+              ("net.minecraft.network.packet", "net.minecraft.network.protocol"),
+              ("PlayerListS2CPacket", "ClientboundPlayerInfoUpdatePacket"),
+              ("PlayerRemoveS2CPacket", "ClientboundPlayerInfoRemovePacket"),
+              ("ServerConfigurationNetworkHandler", "ServerConfigurationPacketListenerImpl"),
+              ("ServerPlayNetworkHandler", "ServerGamePacketListenerImpl"),
+              ("ServerCommonNetworkHandler", "ServerCommonPacketListenerImpl"),
+              ("ConnectedClientData", "CommonListenerCookie"),
+              ("ClientConnection", "Connection"),
+              ("net.minecraft.resources.ResourceLocation", "net.minecraft.resources.Identifier"),
+              ("ResourceLocation.fromNamespaceAndPath", "Identifier.fromNamespaceAndPath"),
+              ("S2CConfigurationChannelEvents", "ClientboundConfigurationChannelEvents"),
+          ]
+          for p in root.rglob("*.java"):
+              s=p.read_text()
+              for a,b in substitutions:
+                  s=s.replace(a,b)
+              # GameProfile's post-26.1 value accessors.
+              for a,b in [
+                  ("gameProfile.getId()", "gameProfile.id()"),
+                  ("profile.getId()", "profile.id()"),
+                  ("entry.profile().getId()", "entry.profile().id()"),
+                  ("gameProfile.getName()", "gameProfile.name()"),
+                  ("profile.getName()", "profile.name()"),
+                  ("gameProfile.getProperties()", "gameProfile.properties()"),
+                  ("profile.getProperties()", "profile.properties()"),
+                  ("entry.profile().getProperties()", "entry.profile().properties()"),
+              ]:
+                  s=s.replace(a,b)
+              p.write_text(s)
+          # The old Yggdrasil URL whitelist hook was removed from newer authlib.
+          mix=root/"main/resources/mostly_server_capes.mixins.json"
+          if mix.exists():
+              d=json.loads(mix.read_text())
+              d["mixins"]=[x for x in d.get("mixins",[]) if x!="TextureUrlCheckerMixin"]
+              mix.write_text(json.dumps(d,indent=2)+"\n")
+          (root/"main/java/me/zombii/mostly_server_capes/mixin/TextureUrlCheckerMixin.java").unlink(missing_ok=True)
+          # Access the renamed server-side profile field explicitly, avoiding brittle name-derived accessors.
+          accessor=root/"main/java/me/zombii/mostly_server_capes/mixin/ServerConfigurationPacketListenerImplAccessor.java"
+          old=root/"main/java/me/zombii/mostly_server_capes/mixin/ServerConfigurationNetworkHandlerAccessor.java"
+          accessor.write_text("""package me.zombii.mostly_server_capes.mixin;
+          import com.mojang.authlib.GameProfile;
+          import net.minecraft.server.network.ServerConfigurationPacketListenerImpl;
+          import org.spongepowered.asm.mixin.Mixin;
+          import org.spongepowered.asm.mixin.gen.Accessor;
+          @Mixin(ServerConfigurationPacketListenerImpl.class)
+          public interface ServerConfigurationPacketListenerImplAccessor {
+              @Accessor("gameProfile")
+              GameProfile capeCommand$getProfile();
+          }
+          """)
+          old.unlink(missing_ok=True)
+          # Remove the old manual full-respawn packet sequence; it is unused by the mod and
+          # relies on packet constructors that were redesigned in 26.x.
+          p=root/"main/java/me/zombii/mostly_server_capes/MostlyServerCapes.java"
+          s=p.read_text()
+          start=s.find("\tpublic static void reloadPlayer(")
+          if start < 0:
+              start=s.find("    public static void reloadPlayer(")
+          if start >= 0:
+              brace=s.find("{",start); depth=0; end=None
+              for i in range(brace,len(s)):
+                  if s[i]=="{": depth+=1
+                  elif s[i]=="}":
+                      depth-=1
+                      if depth==0:
+                          end=i+1; break
+              if end is not None: s=s[:start]+s[end:]
+          s=s.replace("ServerConfigurationNetworkHandlerAccessor) handler).getProfile()", "ServerConfigurationPacketListenerImplAccessor) handler).capeCommand$getProfile()")
+          s=s.replace("ServerConfigurationPacketListenerImplAccessor) handler).getProfile()", "ServerConfigurationPacketListenerImplAccessor) handler).capeCommand$getProfile()")
+          s=s.replace("import me.zombii.mostly_server_capes.mixin.ServerConfigurationNetworkHandlerAccessor;", "import me.zombii.mostly_server_capes.mixin.ServerConfigurationPacketListenerImplAccessor;")
+          # Drop imports that were only used by removed reloadPlayer implementation.
+          for line in [
+              "import net.minecraft.entity.EquipmentSlot;\n",
+              "import net.minecraft.entity.effect.StatusEffectInstance;\n",
+              "import net.minecraft.item.ItemStack;\n",
+              "import net.minecraft.network.packet.s2c.play.*;\n",
+              "import net.minecraft.network.protocol.game.*;\n",
+              "import net.minecraft.server.PlayerManager;\n",
+              "import net.minecraft.server.level.ServerLevel;\n",
+              "import net.minecraft.server.world.ServerWorld;\n",
+              "import net.minecraft.world.biome.source.BiomeAccess;\n",
+              "import com.mojang.datafixers.util.Pair;\n",
+              "import java.util.Iterator;\n",
+          ]:
+              s=s.replace(line,"")
+          p.write_text(s)
+          # Keep the player-info packet transformation, but adapt packet and listener APIs.
+          p=root/"main/java/me/zombii/mostly_server_capes/mixin/ServerGamePacketListenerImplMixin.java"
+          old=root/"main/java/me/zombii/mostly_server_capes/mixin/ServerPlayNetworkHandlerMixin.java"
+          if old.exists():
+              old.rename(p)
+          s=p.read_text()
+          s=s.replace("PacketCallbacks", "ChannelFutureListener")
+          s=s.replace("import net.minecraft.network.PacketCallbacks;", "import io.netty.channel.ChannelFutureListener;")
+          s=s.replace("new Entry(entry.profileId(), profile, entry.listed(),\n                            entry.latency(), entry.gameMode(), entry.displayName(),\n                            entry.chatSession())",
+                      "new Entry(entry.profileId(), profile, entry.listed(),\n                            entry.latency(), entry.gameMode(), entry.displayName(),\n                            entry.showHat(), entry.listOrder(), entry.chatSession())")
+          p.write_text(s)
+          # Update packet-entry updater interface and mixin packet class names/package after migration.
+          p=root/"main/java/me/zombii/mostly_server_capes/network/PlayerListS2CPacketEntriesUpdater.java"
+          if p.exists():
+              s=p.read_text().replace("net.minecraft.network.packet.s2c.play", "net.minecraft.network.protocol.game")
+              s=s.replace("PlayerListS2CPacket", "ClientboundPlayerInfoUpdatePacket")
+              p.write_text(s)
+          p=root/"main/java/me/zombii/mostly_server_capes/mixin/PlayerListS2CPacketMixin.java"
+          if p.exists():
+              s=p.read_text().replace("net.minecraft.network.packet.s2c.play", "net.minecraft.network.protocol.game")
+              s=s.replace("PlayerListS2CPacket", "ClientboundPlayerInfoUpdatePacket")
+              p.write_text(s)
+          # The interface file is deliberately renamed because @Accessor mapping follows target names.
+          for p in root.rglob("*.java"):
+              s=p.read_text()
+              s=s.replace("ServerConfigurationNetworkHandlerAccessor", "ServerConfigurationPacketListenerImplAccessor")
+              # Actual player entity methods in current mappings.
+              s=s.replace("entity.getServer()", "entity.level().getServer()")
+              s=s.replace("entity.serverLevel()", "(net.minecraft.server.level.ServerLevel) entity.level()")
+              p.write_text(s)
+          # Version metadata and mixin compatibility.
+          meta=root/"main/resources/fabric.mod.json"
+          d=json.loads(meta.read_text())
+          d["version"]="26.3-2.0.3-port2"
+          d["depends"]["minecraft"]="~26.3"
+          d["depends"]["fabricloader"]=">=0.19.5"
+          d["depends"]["java"]=">=25"
+          meta.write_text(json.dumps(d,indent=2)+"\n")
+          for mixpath in [root/"main/resources/mostly_server_capes.mixins.json",root/"client/resources/mostly_server_capes.client.mixins.json"]:
+              if mixpath.exists():
+                  d=json.loads(mixpath.read_text()); d["compatibilityLevel"]="JAVA_25"; mixpath.write_text(json.dumps(d,indent=2)+"\n")
+          print("Applied 26.3 source compatibility fixes.")
+          PY
           PY
       - name: Compile port
         shell: bash
