@@ -284,6 +284,12 @@ jobs:
               for a,b in client_subs: s=s.replace(a,b)
               # Fabric 26.1+ uses official Mojang names in networking registries.
               s=s.replace("PayloadTypeRegistry.configurationS2C()", "PayloadTypeRegistry.clientboundConfiguration()")
+              # Rename identifiers as well as package paths in the client source set.
+              s=s.replace("PlayerListEntry.class", "PlayerInfo.class")
+              s=s.replace("SkinTextures instance", "PlayerSkin instance")
+              s=s.replace("new PacketCodec<>", "new StreamCodec<>")
+              s=s.replace("decode(PacketByteBuf ", "decode(FriendlyByteBuf ")
+              s=s.replace("encode(PacketByteBuf ", "encode(FriendlyByteBuf ")
               # The secure flag is still a record component on PlayerSkin, so the accessor name remains secure().
               p.write_text(s)
           # Keep the stable custom payload id type consistent after migration.
