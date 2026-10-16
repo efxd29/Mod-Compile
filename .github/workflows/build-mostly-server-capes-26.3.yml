@@ -243,8 +243,13 @@ jobs:
           for mixpath in [root/"main/resources/mostly_server_capes.mixins.json",root/"client/resources/mostly_server_capes.client.mixins.json"]:
               if mixpath.exists():
                   d=json.loads(mixpath.read_text()); d["compatibilityLevel"]="JAVA_25"; mixpath.write_text(json.dumps(d,indent=2)+"\n")
+          # Keep runtime mixin declarations aligned with renamed mixin classes.
+          for mixpath in [root/"main/resources/mostly_server_capes.mixins.json"]:
+              if mixpath.exists():
+                  d=json.loads(mixpath.read_text())
+                  d["mixins"]=[{"ServerPlayNetworkHandlerMixin":"ServerGamePacketListenerImplMixin","PlayerListS2CPacketMixin":"ClientboundPlayerInfoUpdatePacketMixin","ServerConfigurationNetworkHandlerAccessor":"ServerConfigurationPacketListenerImplAccessor"}.get(x,x) for x in d.get("mixins",[])]
+                  mixpath.write_text(json.dumps(d,indent=2)+"\n")
           print("Applied 26.3 source compatibility fixes.")
-          PY
           PY
       - name: Compile port
         shell: bash
