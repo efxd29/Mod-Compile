@@ -265,6 +265,40 @@ jobs:
                   d=json.loads(mixpath.read_text())
                   d["mixins"]=[{"ServerPlayNetworkHandlerMixin":"ServerGamePacketListenerImplMixin","PlayerListS2CPacketMixin":"ClientboundPlayerInfoUpdatePacketMixin","ServerConfigurationNetworkHandlerAccessor":"ServerConfigurationPacketListenerImplAccessor"}.get(x,x) for x in d.get("mixins",[])]
                   mixpath.write_text(json.dumps(d,indent=2)+"\n")
+          # The main source set was migrated by Loom; convert client sources too.
+          for p in (root/"client").rglob("*.java"):
+              s=p.read_text()
+              client_subs = [
+                  ("net.minecraft.network.PacketByteBuf", "net.minecraft.network.FriendlyByteBuf"),
+                  ("net.minecraft.network.codec.PacketCodec", "net.minecraft.network.codec.StreamCodec"),
+                  ("net.minecraft.network.protocol.CustomPayload", "net.minecraft.network.protocol.common.custom.CustomPacketPayload"),
+                  ("CustomPayload", "CustomPacketPayload"),
+                  ("PayloadTypeRegistry.configurationS2C()", "PayloadTypeRegistry.clientboundConfiguration()"),
+                  ("net.minecraft.client.network.PlayerListEntry", "net.minecraft.client.multiplayer.PlayerInfo"),
+                  ("net.minecraft.client.util.SkinTextures", "net.minecraft.world.entity.player.PlayerSkin"),
+                  ("net.minecraft.client.render.entity.LivingEntityRenderer", "net.minecraft.client.renderer.entity.LivingEntityRenderer"),
+                  ("net.minecraft.entity.LivingEntity", "net.minecraft.world.entity.LivingEntity"),
+                  ("getUuid()", "getUUID()"),
+                  ("Lnet/minecraft/client/util/SkinTextures;secure()Z", "Lnet/minecraft/world/entity/player/PlayerSkin;secure()Z"),
+              ]
+              for a,b in client_subs: s=s.replace(a,b)
+              # Fabric 26.1+ uses official Mojang names in networking registries.
+              s=s.replace("PayloadTypeRegistry.configurationS2C()", "PayloadTypeRegistry.clientboundConfiguration()")
+              # The secure flag is still a record component on PlayerSkin, so the accessor name remains secure().
+              p.write_text(s)
+          # Keep the stable custom payload id type consistent after migration.
+          constants=root/"main/java/me/zombii/mostly_server_capes/Constants.java"
+          s=constants.read_text()
+          s=s.replace("CustomPayload", "CustomPacketPayload")
+          s=s.replace("net.minecraft.network.protocol.CustomPayload", "net.minecraft.network.protocol.common.custom.CustomPacketPayload")
+          constants.write_text(s)
+          # Update client mixin target names/package. Use PlayerInfo's skin accessor in 26.x.
+          p=root/"client/java/me/zombii/mostly_server_capes/mixin/client/PlayerListEntryMixin.java"
+          if p.exists():
+              s=p.read_text()
+              s=s.replace("@Mixin(PlayerInfo.class)", "@Mixin(PlayerInfo.class)")
+              s=s.replace('method = "method_52806"', 'method = "getSkin"')
+              p.write_text(s)
           print("Applied 26.3 source compatibility fixes.")
           PY
       - name: Compile port
