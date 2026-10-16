@@ -132,8 +132,8 @@ public class CommandCoroConfigClientFabric {
 
     p = root / "src/main/java/com/corosus/coroutil/command/CommandCoroConfig.java"
     s = p.read_text(encoding="utf-8")
-    s = s.replace("import net.minecraft.commands.Commands;", "import net.minecraft.commands.Commands;\nimport net.minecraft.server.permissions.LevelBasedPermissionSet;")
-    s = s.replace("s -> s.hasPermission(2)", "s -> s.permissions().hasPermission(LevelBasedPermissionSet.GAMEMASTER)")
+    s = s.replace("import net.minecraft.commands.Commands;", "import net.minecraft.commands.Commands;\nimport net.minecraft.server.permissions.Permissions;")
+    s = s.replace("s -> s.hasPermission(2)", "s -> s.permissions().hasPermission(Permissions.COMMANDS_GAMEMASTER)")
     p.write_text(s, encoding="utf-8")
 
     p = root / "src/main/java/com/corosus/coroutil/util/ChunkCoordinatesBlock.java"
@@ -142,8 +142,17 @@ public class CommandCoroConfigClientFabric {
 
     p = root / "src/main/java/com/corosus/coroutil/util/CoroUtilCompatibility.java"
     s = p.read_text(encoding="utf-8")
-    s = s.replace("biome.getTemperature(pos)", "biome.getTemperature(pos, world.getSeaLevel())", 1)
-    s = s.replace("biome.getTemperature(pos)", "biome.getTemperature(pos, world.getSeaLevel())", 1)
+     s = s.replace("biome.getTemperature(pos)", "biome.getBaseTemperature()")
+    old_rain = """    public static boolean warmEnoughToRain(Biome biome, BlockPos pos, Level levelReader) {
+        return getAdjustedTemperature(levelReader, biome, pos) >= 0.15F;
+    }"""
+    new_rain = """    public static boolean warmEnoughToRain(Biome biome, BlockPos pos, Level levelReader) {
+        if (!isSereneSeasonsInstalled()) {
+            return biome.warmEnoughToRain(pos, levelReader.getSeaLevel());
+        }
+        return getAdjustedTemperature(levelReader, biome, pos) >= 0.15F;
+    }"""
+    s = s.replace(old_rain, new_rain)
     p.write_text(s, encoding="utf-8")
 
     p = root / "src/main/java/com/corosus/coroutil/util/CoroUtilColor.java"
