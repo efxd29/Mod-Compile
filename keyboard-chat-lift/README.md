@@ -1,4 +1,4 @@
-# Keyboard Chat Lift — Fabric 26.3
+# Keyboard Chat Lift — Fabric 26.3 v1.1.0
 
 Client-side Fabric mod that raises the original vanilla chat messages and chat input above a docked Android virtual keyboard without adding an overlay or resizing Minecraft's GUI viewport.
 
@@ -21,10 +21,10 @@ Floating keyboards may report no docked IME inset, and some launcher/OS combinat
 
 ## Install
 
-1. Put `keyboard-chat-lift-1.0.0.jar` in the instance's `mods` folder.
+1. Replace any older Keyboard Chat Lift JAR with `keyboard-chat-lift-1.1.0.jar` in the instance's `mods` folder. Do not keep both files, because they share the same mod ID.
 2. Restart the Minecraft instance.
 3. Open chat and show the keyboard; then change the keyboard height to verify that chat/input follows it.
 
 ## Build
 
-Run `gradle build` from this directory. Output: `build/libs/keyboard-chat-lift-1.0.0.jar`.
+Run `gradle build` from this directory. Output: `build/libs/keyboard-chat-lift-1.1.0.jar`.

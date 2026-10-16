@@ -3,7 +3,7 @@
   "id": "keyboardchat",
   "version": "${version}",
   "name": "Keyboard Chat Lift",
-  "description": "Moves the vanilla chat messages and chat input upward while the chat screen is open, without resizing the game viewport.",
+  "description": "Automatically positions the real vanilla chat above the detected Android virtual keyboard without resizing the Minecraft viewport.",
   "authors": ["efxd29"],
   "contact": {
     "sources": "https://github.com/efxd29/Mod-Compile/tree/build-keyboard-chat-lift-mc26.3/keyboard-chat-lift"
