@@ -43,18 +43,82 @@ if aw_path.exists():
     aw_path.write_text(aw, encoding="utf-8")
 
 build = root / "build_fabric.gradle"
-g = build.read_text(encoding="utf-8")
-g = g.replace("id 'fabric-loom' version '1.6-SNAPSHOT'", "id 'net.fabricmc.fabric-loom' version '1.18-SNAPSHOT'")
-g = g.replace("mixin {", "mixin {\n\t\tuseLegacyMixinAp = true", 1)
-g = g.replace("modImplementation ", "implementation ")
-g = g.replace('include(implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}")', 'implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"')
-g = re.sub(r"(?ms)^[ \t]*mappings\(loom\.layered\s*\{.*?^[ \t]*\}\)[ \t]*\n", "", g)
-g = re.sub(r'(?m)^[ \t]*include\(modImplementation\("curse\.maven:forge-config-api-port-fabric-547434:5427493"\)\)\s*\n', "", g)
-g = re.sub(r"(?m)^[ \t]*implementation ['\"]com\.electronwill\.night-config:(?:core|toml):[^'\"]+['\"]\s*\n", "", g)
-g = g.replace("it.options.release = 21", "it.options.release = 25")
-g = g.replace("JavaVersion.VERSION_21", "JavaVersion.VERSION_25")
-if kind == "watut" and "repositories {" in g and "mavenLocal()" not in g:
-    g = g.replace("repositories {", "repositories {\n\tmavenLocal()", 1)
+g = """plugins {
+    id 'net.fabricmc.fabric-loom' version '1.18.4'
+}
+
+version = project.mod_version
+group = project.maven_group
+
+repositories {
+    mavenLocal()
+    maven { url = "https://maven.fabricmc.net/" }
+    mavenCentral()
+}
+
+dependencies {
+    minecraft "com.mojang:minecraft:${project.minecraft_version}"
+    implementation "net.fabricmc:fabric-loader:${project.loader_version}"
+    implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+}
+
+loom {
+    accessWidenerPath = file("src/main/resources/${project.mod_id}.accesswidener")
+    mixin {
+        useLegacyMixinAp = true
+        defaultRefmapName = "${project.mod_id}.refmap.json"
+    }
+}
+
+sourceSets {
+    main {
+        java {
+            exclude "com/corosus/${project.mod_id}/api/forge/**"
+            exclude "com/corosus/${project.mod_id}/loader/forge/**"
+            exclude "com/corosus/${project.mod_id}/loader/neoforge/**"
+        }
+    }
+}
+
+if (project.mod_id == "watut") {
+    sourceSets.main.resources.srcDir 'src/generated/resources'
+}
+
+base {
+    archivesName = "${project.archives_base_name}-fabric"
+}
+
+processResources {
+    inputs.property "version", project.version
+    filesMatching("fabric.mod.json") {
+        expand "mod_id": project.mod_id, "version": project.version, "mod_name": project.mod_name, "mod_description": project.mod_description, "mod_authors": project.mod_authors, "mod_license": project.mod_license
+    }
+    exclude("META-INF/mods.toml")
+    exclude("META-INF/neoforge.mods.toml")
+    exclude("META-INF/accesstransformer.cfg")
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.release = 25
+    options.encoding = "UTF-8"
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_25
+    targetCompatibility = JavaVersion.VERSION_25
+}
+
+jar {
+    from("LICENSE")
+}
+"""
+if kind == "watut":
+    g = g.replace(
+        "dependencies {",
+        '''dependencies {
+    implementation "com.corosus.coroutil:coroutil-fabric:${project.minecraft_version}-${project.coroutil_version}"''',
+        1,
+    )
 build.write_text(g, encoding="utf-8")
 
 # The old Fabric port of ForgeConfigAPI embeds 1.21 intermediary access wideners.
