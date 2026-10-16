@@ -1,0 +1,61 @@
+name: Build FirstChoice 26.3
+on:
+  push:
+    paths:
+      - 'zips/trigger-firstchoice-build'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - name: Decode submitted source
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat zips/firstchoice-source-part*.b64 | base64 --decode > /tmp/firstchoice-project.zip
+          ACTUAL="$(git hash-object /tmp/firstchoice-project.zip)"
+          echo "Decoded archive Git blob SHA: $ACTUAL"
+          test "$ACTUAL" = "05753139782b9f7ccfe22c3af1daa395fc9ecbc5"
+          mkdir -p /tmp/firstchoice-project
+          unzip -q /tmp/firstchoice-project.zip -d /tmp/firstchoice-project
+          ROOT=/tmp/firstchoice-project/firstchoice
+          test -f "$ROOT/build.gradle"
+          test -f "$ROOT/src/main/java/dev/firstchoice/FirstChoice.java"
+          test -f "$ROOT/src/main/resources/fabric.mod.json"
+      - name: Install Gradle 9.7.1
+        shell: bash
+        run: |
+          curl --fail --location --retry 3 --retry-delay 2 https://services.gradle.org/distributions/gradle-9.7.1-bin.zip -o /tmp/gradle.zip
+          unzip -q /tmp/gradle.zip -d "$HOME"
+          echo "$HOME/gradle-9.7.1/bin" >> "$GITHUB_PATH"
+      - name: Compile source unchanged
+        working-directory: /tmp/firstchoice-project/firstchoice
+        shell: bash
+        run: gradle build --no-daemon --console=plain
+      - name: Verify compiled JAR
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT=/tmp/firstchoice-project/firstchoice
+          JAR="$(find "$ROOT/build/libs" -maxdepth 1 -type f -name '*.jar' ! -name '*sources*' ! -name '*dev*' -size +0c | head -1)"
+          test -n "$JAR"
+          mkdir -p out
+          cp "$JAR" out/FirstChoice-26.3-1.0.0.jar
+          unzip -t out/FirstChoice-26.3-1.0.0.jar
+          unzip -p out/FirstChoice-26.3-1.0.0.jar fabric.mod.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FirstChoice-26.3-1.0.0
+          path: out/FirstChoice-26.3-1.0.0.jar
+          if-no-files-found: error
+          retention-days: 7
