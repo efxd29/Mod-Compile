@@ -298,13 +298,30 @@ jobs:
           s=s.replace("CustomPayload", "CustomPacketPayload")
           s=s.replace("net.minecraft.network.protocol.CustomPayload", "net.minecraft.network.protocol.common.custom.CustomPacketPayload")
           constants.write_text(s)
-          # Update client mixin target names/package. Use PlayerInfo's skin accessor in 26.x.
+          # Let the client load the unsigned texture properties that this mod intentionally rewrites.
           p=root/"client/java/me/zombii/mostly_server_capes/mixin/client/PlayerListEntryMixin.java"
-          if p.exists():
-              s=p.read_text()
-              s=s.replace("@Mixin(PlayerInfo.class)", "@Mixin(PlayerInfo.class)")
-              s=s.replace('method = "method_52806"', 'method = "getSkin"')
-              p.write_text(s)
+          p.write_text("""package me.zombii.mostly_server_capes.mixin.client;
+
+          import com.mojang.authlib.GameProfile;
+          import net.minecraft.client.multiplayer.PlayerInfo;
+          import org.spongepowered.asm.mixin.Mixin;
+          import org.spongepowered.asm.mixin.injection.At;
+          import org.spongepowered.asm.mixin.injection.ModifyArg;
+
+          import java.util.function.Supplier;
+
+          @Mixin(PlayerInfo.class)
+          public class PlayerListEntryMixin {
+              @ModifyArg(
+                  method = "createSkinLookup",
+                  at = @At(value = "INVOKE", target = "Lnet/minecraft/client/resources/SkinManager;createLookup(Lcom/mojang/authlib/GameProfile;Z)Ljava/util/function/Supplier;"),
+                  index = 1
+              )
+              private static boolean capeCommand$allowUnsignedTextures(boolean requireSecure) {
+                  return false;
+              }
+          }
+          """)
           print("Applied 26.3 source compatibility fixes.")
           PY
       - name: Compile port
