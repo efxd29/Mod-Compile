@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "id": "chatmover",
+  "version": "${version}",
+  "name": "Chat Mover Dynamic Android",
+  "description": "Auto-adjust chat HUD position based on Android soft keyboard height for Minecraft 26.3.",
+  "authors": ["Custom"],
+  "contact": {},
+  "license": "MIT",
+  "environment": "client",
+  "entrypoints": {
+    "client": [
+      "com.chatmover.ChatMoverClient"
+    ]
+  },
+  "mixins": [
+    "chatmover.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=0.15.0",
+    "minecraft": "~26.3",
+    "java": ">=17"
+  }
+}

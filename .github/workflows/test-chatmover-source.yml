@@ -1,0 +1,38 @@
+name: Test ChatMover supplied source
+
+on:
+  push:
+    branches:
+      - chatmover-supplied-source-test
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.6.0'
+      - name: Build the supplied source without edits
+        run: |
+          set -o pipefail
+          gradle --no-daemon build --stacktrace 2>&1 | tee build.log
+      - name: Upload build log if the build fails
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: chatmover-supplied-source-build-log
+          path: build.log
+          if-no-files-found: ignore
+          retention-days: 7
