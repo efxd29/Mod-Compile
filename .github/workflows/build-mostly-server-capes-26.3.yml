@@ -236,6 +236,7 @@ jobs:
           for p in root.rglob("*.java"):
               s=p.read_text()
               s=s.replace("PacketSendListener", "ChannelFutureListener")
+              s=s.replace("import net.minecraft.network.ChannelFutureListener;", "import io.netty.channel.ChannelFutureListener;")
               s=s.replace("newProfile.getProperties()", "newProfile.properties()")
               s=s.replace("import net.minecraft.network.protocol.PacketSendListener;\n", "")
               p.write_text(s)
