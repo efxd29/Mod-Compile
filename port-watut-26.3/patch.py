@@ -362,6 +362,37 @@ public class ConfigModFabric extends ConfigMod implements ModInitializer {
 }
 ''', encoding="utf-8")
 
+if kind == "watut":
+    # Broad namespace and class moves from 1.21-era Mojang mappings to 26.3.
+    for source in (root / "src/main/java").rglob("*.java"):
+        text = source.read_text(encoding="utf-8")
+        old = text
+        text = re.sub(r"\bResourceLocation\b", "Identifier", text)
+        text = re.sub(r"\bGuiGraphics\b", "GuiGraphicsExtractor", text)
+        text = text.replace("net.minecraft.client.model.PlayerModel", "net.minecraft.client.model.player.PlayerModel")
+        text = re.sub(r"\bClickType\b", "ContainerInput", text)
+        text = text.replace("net.minecraft.Util", "net.minecraft.util.Util")
+        text = text.replace("net.minecraft.world.ItemInteractionResult", "net.minecraft.world.InteractionResult")
+        text = text.replace("PayloadTypeRegistry.playS2C()", "PayloadTypeRegistry.clientboundPlay()")
+        text = text.replace("PayloadTypeRegistry.playC2S()", "PayloadTypeRegistry.serverboundPlay()")
+        text = re.sub(r"\bMinecraft\.getInstance\(\)\.screen\b", "Minecraft.getInstance().screen()", text)
+        text = re.sub(r"\b(mc|minecraft)\.screen\b", r"\1.screen()", text)
+        # The game loading overlay and inventory screen classes were removed.
+        # WATUT uses these checks only to prevent reporting transitional UI as a player's open screen.
+        text = text.replace("mc.screen() instanceof ReceivingLevelScreen", "mc.screen() != null")
+        text = text.replace("mc.screen() instanceof EffectRenderingInventoryScreen", "mc.screen() != null")
+        if source.name == "WatutModFabricClient.java":
+            text = text.replace("render_order.addAll(ParticleEngine.RENDER_ORDER);", "render_order.addAll(ParticleEngine.RENDER_ORDER);")
+            # Optional names in the current loader must be unwrapped explicitly.
+            text = re.sub(r"getNamespace\(([^)]*)\)", r"getNamespace(\1).orElse(\"\")", text)
+        if source.name == "WatutNetworkingFabric.java":
+            text = re.sub(r"import net\.fabricmc\.fabric\.api\.networking\.v1\.PacketByteBufs;\s*\n", "", text)
+            text = re.sub(r"import net\.minecraft\.network\.FriendlyByteBuf;\s*\n", "", text)
+            text = re.sub(r"(?m)^\s*FriendlyByteBuf buf = PacketByteBufs\.create\(\);\s*\n", "", text)
+            text = re.sub(r"(?m)^\s*buf\.writeNbt\(data\);\s*\n", "", text)
+        if text != old:
+            source.write_text(text, encoding="utf-8")
+
 # Correct current loader metadata; retain upstream entrypoints/mixins/access wideners.
 meta_path = root / "src/main/resources/fabric.mod.json"
 if meta_path.exists():
