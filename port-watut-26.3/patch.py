@@ -142,7 +142,7 @@ public class CommandCoroConfigClientFabric {
 
     p = root / "src/main/java/com/corosus/coroutil/util/CoroUtilCompatibility.java"
     s = p.read_text(encoding="utf-8")
-     s = s.replace("biome.getTemperature(pos)", "biome.getBaseTemperature()")
+    s = s.replace("biome.getTemperature(pos)", "biome.getBaseTemperature()")
     old_rain = """    public static boolean warmEnoughToRain(Biome biome, BlockPos pos, Level levelReader) {
         return getAdjustedTemperature(levelReader, biome, pos) >= 0.15F;
     }"""
