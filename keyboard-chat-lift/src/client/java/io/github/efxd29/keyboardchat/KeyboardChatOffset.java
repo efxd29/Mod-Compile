@@ -1,6 +1,6 @@
 package io.github.efxd29.keyboardchat;
 
-/** Provides the current Android-keyboard overlap offset in Minecraft's scaled GUI coordinates. */
+/** Reads the active keyboard overlap from Zalith's Android-to-JVM IME bridge. */
 public final class KeyboardChatOffset {
     private KeyboardChatOffset() {
     }

@@ -3,7 +3,7 @@
   "id": "keyboardchat",
   "version": "${version}",
   "name": "Keyboard Chat Lift",
-  "description": "Automatically positions vanilla chat above Android's detected virtual keyboard, with a mobile-only fallback.",
+  "description": "Positions the original vanilla chat above the real Android IME height reported by the Zalith launcher bridge.",
   "authors": ["efxd29"],
   "contact": {
     "sources": "https://github.com/efxd29/Mod-Compile/tree/build-keyboard-chat-lift-mc26.3/keyboard-chat-lift"
