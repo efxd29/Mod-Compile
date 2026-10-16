@@ -1,6 +1,9 @@
 name: Test ChatMover supplied source
 
 on:
+  pull_request:
+    branches:
+      - main
   push:
     branches:
       - chatmover-supplied-source-test
