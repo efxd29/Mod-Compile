@@ -43,6 +43,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          python3 -m py_compile port-watut-26.3/patch.py
           python3 port-watut-26.3/patch.py CoroUtil coroutil
           python3 port-watut-26.3/patch.py WATUT watut
           cp CoroUtil/build_fabric.gradle CoroUtil/build.gradle
