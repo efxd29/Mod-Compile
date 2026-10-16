@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "keyboardchat",
+  "version": "${version}",
+  "name": "Keyboard Chat Lift",
+  "description": "Moves the vanilla chat messages and chat input upward while the chat screen is open, without resizing the game viewport.",
+  "authors": ["efxd29"],
+  "contact": {
+    "sources": "https://github.com/efxd29/Mod-Compile/tree/build-keyboard-chat-lift-mc26.3/keyboard-chat-lift"
+  },
+  "license": "MIT",
+  "environment": "client",
+  "mixins": [
+    "keyboardchat.client.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=0.19.5",
+    "minecraft": "~26.3",
+    "java": ">=25"
+  }
+}
