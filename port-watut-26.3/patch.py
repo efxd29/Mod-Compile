@@ -64,10 +64,6 @@ dependencies {
 
 loom {
     accessWidenerPath = file("src/main/resources/${project.mod_id}.accesswidener")
-    mixin {
-        useLegacyMixinAp = true
-        defaultRefmapName = "${project.mod_id}.refmap.json"
-    }
 }
 
 sourceSets {
