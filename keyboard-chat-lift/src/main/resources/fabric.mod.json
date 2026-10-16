@@ -3,7 +3,7 @@
   "id": "keyboardchat",
   "version": "${version}",
   "name": "Keyboard Chat Lift",
-  "description": "Tracks Android IME bounds for automatic vanilla chat positioning, with an Android-only safe fallback.",
+  "description": "Automatically positions vanilla chat above Android's detected virtual keyboard, with a mobile-only fallback.",
   "authors": ["efxd29"],
   "contact": {
     "sources": "https://github.com/efxd29/Mod-Compile/tree/build-keyboard-chat-lift-mc26.3/keyboard-chat-lift"

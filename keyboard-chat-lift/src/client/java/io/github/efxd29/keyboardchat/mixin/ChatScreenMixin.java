@@ -2,6 +2,7 @@ package io.github.efxd29.keyboardchat.mixin;
 
 import io.github.efxd29.keyboardchat.KeyboardChatOffset;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.ChatScreen;
 import org.spongepowered.asm.mixin.Mixin;
@@ -30,7 +31,13 @@ public abstract class ChatScreenMixin {
     }
 
     @Inject(method = "extractRenderState", at = @At("HEAD"))
-    private void keyboardchat$followKeyboard(final CallbackInfo ci) {
+    private void keyboardchat$followKeyboard(
+            final GuiGraphicsExtractor graphics,
+            final int mouseX,
+            final int mouseY,
+            final float deltaTicks,
+            final CallbackInfo ci
+    ) {
         keyboardchat$updateInputY();
     }
 
