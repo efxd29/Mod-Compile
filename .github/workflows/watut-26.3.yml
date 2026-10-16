@@ -11,6 +11,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: watut-full-26.3
+  cancel-in-progress: true
+
 jobs:
   port-and-build:
     runs-on: ubuntu-24.04
