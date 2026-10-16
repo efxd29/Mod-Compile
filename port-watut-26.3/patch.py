@@ -46,6 +46,7 @@ build = root / "build_fabric.gradle"
 g = build.read_text(encoding="utf-8")
 g = g.replace("id 'fabric-loom' version '1.6-SNAPSHOT'", "id 'net.fabricmc.fabric-loom' version '1.18-SNAPSHOT'")
 g = g.replace("loom {", "loom {\n\tuseLegacyMixinAp = true", 1)
+g = g.replace("modImplementation ", "implementation ")
 g = re.sub(r"(?ms)^[ \t]*mappings\(loom\.layered\s*\{.*?^[ \t]*\}\)[ \t]*\n", "", g)
 g = re.sub(r'(?m)^[ \t]*include\(modImplementation\("curse\.maven:forge-config-api-port-fabric-547434:5427493"\)\)\s*\n', "", g)
 g = re.sub(r"(?m)^[ \t]*implementation ['\"]com\.electronwill\.night-config:(?:core|toml):[^'\"]+['\"]\s*\n", "", g)
