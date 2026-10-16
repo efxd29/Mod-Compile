@@ -1,24 +1,30 @@
 # Keyboard Chat Lift — Fabric 26.3
 
-Client-side Fabric mod that raises the **real vanilla chat messages** and the **real vanilla chat input box** while `ChatScreen` is open. It does not resize the window, alter the game viewport, add an overlay, or replace the chat UI.
+Client-side Fabric mod that raises the original vanilla chat messages and chat input above a docked Android virtual keyboard without adding an overlay or resizing Minecraft's GUI viewport.
 
-## Build
+## Automatic keyboard tracking
 
-- Minecraft: `26.3`
-- Fabric Loader: `0.19.5`
-- Java toolchain: `25`
-- Build: `gradle build`
+While chat is open, the mod polls Android's actual IME/window insets on the Android UI thread. It reads the IME top edge and active game surface's on-screen bounds, then converts only their overlapping area into Minecraft GUI coordinates. This accounts for Zalith's own surface translation so the full keyboard height is not blindly added twice. The vanilla input position is recalculated while rendering, so keyboard-height changes are followed.
 
-The output JAR is in `build/libs/keyboard-chat-lift-1.0.0.jar`.
+Compatibility paths:
+- Prefer Android `WindowInsets.Type.ime()` on Android 11+.
+- Fall back to Android's visible display frame on older OS/window configurations.
+- If neither source is available, no guessed keyboard height is applied.
+
+Floating keyboards may report no docked IME inset, and some launcher/OS combinations may restrict active-Activity reflection. Direct testing in the target launcher is still needed to confirm behavior on that device.
+
+## Requirements
+
+- Minecraft Java Edition `26.3`
+- Fabric Loader `0.19.5` or newer
+- Java 25
 
 ## Install
 
-1. Use Minecraft Java Edition `26.3` with Fabric Loader `0.19.5` or newer and Java 25.
-2. Put `keyboard-chat-lift-1.0.0.jar` in the instance's `mods` folder.
-3. Fully restart the game/launcher and open chat to test.
+1. Put `keyboard-chat-lift-1.0.0.jar` in the instance's `mods` folder.
+2. Restart the Minecraft instance.
+3. Open chat and show the keyboard; then change the keyboard height to verify that chat/input follows it.
 
-## Offset
+## Build
 
-The offset is recalculated from Minecraft's scaled GUI height: 42% of the scaled height, clamped to 80–240 GUI pixels. It shifts the chat's own bottom coordinate and the input widget/background only. It never changes the game viewport.
-
-Minecraft/Fabric does not expose Android's exact virtual-keyboard/IME bounds to a regular client mod, so the mod cannot precisely detect the keyboard's top edge. If the input is still too low/high for a particular launcher or GUI scale, adjust `HEIGHT_FACTOR`, `MIN_OFFSET`, or `MAX_OFFSET` in `KeyboardChatOffset.java` and rebuild.
+Run `gradle build` from this directory. Output: `build/libs/keyboard-chat-lift-1.0.0.jar`.
