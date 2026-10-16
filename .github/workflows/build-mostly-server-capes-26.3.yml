@@ -1,0 +1,132 @@
+name: Mostly Server Capes 26.3 Port
+on:
+  push:
+    paths:
+      - 'zips/trigger-mostly-server-capes-build'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - name: Fetch original source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth 1 https://github.com/Mr-Zombii/MostlyServerSideCapes.git /tmp/msc
+          test -f /tmp/msc/src/main/java/me/zombii/mostly_server_capes/MostlyServerCapes.java
+      - name: Install Gradle
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 --retry-delay 2 https://services.gradle.org/distributions/gradle-9.7.1-bin.zip -o /tmp/gradle.zip
+          unzip -q /tmp/gradle.zip -d "$HOME"
+          echo "$HOME/gradle-9.7.1/bin" >> "$GITHUB_PATH"
+      - name: Migrate old Yarn source to Mojang mappings
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd /tmp/msc
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          p = Path("build.gradle")
+          s = p.read_text()
+          s = s.replace("id 'fabric-loom' version '1.7-SNAPSHOT'", "id 'net.fabricmc.fabric-loom-remap' version '1.17-SNAPSHOT'")
+          p.write_text(s)
+          p = Path("gradle.properties")
+          s = p.read_text()
+          s = re.sub(r"(?m)^minecraft_version=.*$", "minecraft_version=1.21.3", s)
+          s = re.sub(r"(?m)^yarn_mappings=.*$", "yarn_mappings=1.21.3+build.2", s)
+          s = re.sub(r"(?m)^loader_version=.*$", "loader_version=0.16.7", s)
+          s = re.sub(r"(?m)^fabric_version=.*$", "fabric_version=0.114.1+1.21.3", s)
+          p.write_text(s)
+          PY
+          gradle migrateMappings --mappings "net.minecraft:mappings:1.21.3" --overrideInputsIHaveABackup --no-daemon --console=plain
+      - name: Port project build and metadata to 26.3
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd /tmp/msc
+          python - <<'PY'
+          from pathlib import Path
+          import json, re
+          root = Path(".")
+          p = root / "build.gradle"
+          s = p.read_text()
+          s = s.replace("id 'net.fabricmc.fabric-loom-remap' version '1.17-SNAPSHOT'", "id 'net.fabricmc.fabric-loom' version '1.18-SNAPSHOT'")
+          s = re.sub(r'(?m)^\s*mappings\s+"net\.fabricmc:yarn:.*?\n', '', s)
+          s = s.replace("modImplementation ", "implementation ")
+          s = re.sub(r'(?m)^\s*modApi\(files\("run/mods/fabrictailor-2\.5\.0\.jar"\)\)\s*\n?', '', s)
+          s = re.sub(r'(?m)^\s*it\.options\.release = 21\s*$', '    it.options.release = 25', s)
+          s = s.replace("JavaVersion.VERSION_21", "JavaVersion.VERSION_25")
+          p.write_text(s)
+          p = root / "gradle.properties"
+          s = p.read_text()
+          s = re.sub(r"(?m)^minecraft_version=.*$", "minecraft_version=26.3", s)
+          s = re.sub(r"(?m)^mod_version=.*$", "mod_version=26.3-2.0.3-port1", s)
+          s = re.sub(r"(?m)^loader_version=.*$", "loader_version=0.19.5", s)
+          s = re.sub(r"(?m)^fabric_version=.*$", "fabric_version=0.163.0+26.3", s)
+          s = re.sub(r"(?m)^yarn_mappings=.*\n?", "", s)
+          p.write_text(s)
+          mixin_path = root / "src/main/resources/mostly_server_capes.mixins.json"
+          m = json.loads(mixin_path.read_text())
+          m["mixins"] = [x for x in m.get("mixins", []) if x not in ("FabricTailorCompatMixin", "TailorNetworkHandlerMixin")]
+          mixin_path.write_text(json.dumps(m, indent=2) + "\n")
+          for rel in (
+              "src/main/java/me/zombii/mostly_server_capes/mixin/FabricTailorCompatMixin.java",
+              "src/main/java/me/zombii/mostly_server_capes/mixin/TailorNetworkHandlerMixin.java",
+          ):
+              (root / rel).unlink(missing_ok=True)
+          main = root / "src/main/java/me/zombii/mostly_server_capes/MostlyServerCapes.java"
+          s = main.read_text()
+          s = s.replace("import org.samo_lego.fabrictailor.FabricTailor;\n", "")
+          s = s.replace("import org.samo_lego.fabrictailor.mixin.accessors.AChunkMap;\n", "")
+          s = s.replace("import org.samo_lego.fabrictailor.mixin.accessors.ATrackedEntity;\n", "")
+          s = s.replace("FabricTailor.errorLog(\"Tried to reload skin form client side! This should not happen!\");", "LOGGER.warn(\"Tried to reload skin from client side; ignoring request.\");")
+          main.write_text(s)
+          meta = root / "src/main/resources/fabric.mod.json"
+          d = json.loads(meta.read_text())
+          d["version"] = "26.3-2.0.3-port1"
+          d["depends"]["fabricloader"] = ">=0.19.5"
+          d["depends"]["minecraft"] = "~26.3"
+          d["depends"]["java"] = ">=25"
+          d["depends"]["fabric-api"] = "*"
+          d.pop("suggests", None)
+          meta.write_text(json.dumps(d, indent=2) + "\n")
+          print("Prepared port:", d["version"], d["depends"])
+          PY
+      - name: Compile port
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd /tmp/msc
+          gradle build --no-daemon --stacktrace --console=plain 2>&1 | tee /tmp/msc-build.log
+      - name: Stage compiled JAR or diagnostics
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p out
+          if [ -d /tmp/msc/build/libs ]; then
+            find /tmp/msc/build/libs -maxdepth 1 -type f -name '*.jar' ! -name '*sources*' ! -name '*dev*' -exec cp {} out/ \; || true
+          fi
+          if [ -f /tmp/msc-build.log ]; then cp /tmp/msc-build.log out/build.log; fi
+          if [ -z "$(find out -maxdepth 1 -type f -name '*.jar' -print -quit)" ]; then
+            echo "No JAR was produced. Review build.log for the first compile/setup error." > out/ERROR.txt
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Mostly-Server-Capes-26.3-port
+          path: out/
+          if-no-files-found: warn
+          retention-days: 7
