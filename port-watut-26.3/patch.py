@@ -117,6 +117,52 @@ if kind == "watut":
     )
 build.write_text(g, encoding="utf-8")
 
+# Port small CoroUtil APIs changed by Minecraft 26.3 / the Fabric API.
+if kind == "coroutil":
+    p = root / "src/main/java/com/corosus/coroutil/loader/fabric/CommandCoroConfigClientFabric.java"
+    p.write_text("""package com.corosus.coroutil.loader.fabric;
+
+public class CommandCoroConfigClientFabric {
+    // The old client-command API isn't present in Fabric 26.3; upstream caller
+    // currently disables this optional command registration.
+    public static void register(Object dispatcher) { }
+    public static String getCommandName() { return "coro"; }
+}
+""", encoding="utf-8")
+
+    p = root / "src/main/java/com/corosus/coroutil/command/CommandCoroConfig.java"
+    s = p.read_text(encoding="utf-8")
+    s = s.replace("import net.minecraft.commands.Commands;", "import net.minecraft.commands.Commands;\nimport net.minecraft.server.permissions.LevelBasedPermissionSet;")
+    s = s.replace("s -> s.hasPermission(2)", "s -> s.permissions().hasPermission(LevelBasedPermissionSet.GAMEMASTER)")
+    p.write_text(s, encoding="utf-8")
+
+    p = root / "src/main/java/com/corosus/coroutil/util/ChunkCoordinatesBlock.java"
+    s = p.read_text(encoding="utf-8").replace("super(par1BlockCoord);", "super(par1BlockCoord.getX(), par1BlockCoord.getY(), par1BlockCoord.getZ());")
+    p.write_text(s, encoding="utf-8")
+
+    p = root / "src/main/java/com/corosus/coroutil/util/CoroUtilCompatibility.java"
+    s = p.read_text(encoding="utf-8")
+    s = s.replace("biome.getTemperature(pos)", "biome.getTemperature(pos, world.getSeaLevel())", 1)
+    s = s.replace("biome.getTemperature(pos)", "biome.getTemperature(pos, world.getSeaLevel())", 1)
+    p.write_text(s, encoding="utf-8")
+
+    p = root / "src/main/java/com/corosus/coroutil/util/CoroUtilColor.java"
+    s = p.read_text(encoding="utf-8")
+    start = s.index("    public static int[] getColors(BlockState state) {")
+    end = s.index("    public static int getPixelRGBA(", start)
+    s = s[:start] + """    // Block model particle extraction was redesigned in 26.3. WATUT itself
+    // does not call this unrelated helper; returning an empty palette is the
+    // safe compatibility behavior until a stable model-part API is available.
+    public static int[] getColors(BlockState state) {
+        return IntArrays.EMPTY_ARRAY;
+    }
+
+""" + s[end:]
+    s = s.replace("import net.minecraft.client.Minecraft;\n", "")
+    s = s.replace("import net.minecraft.client.resources.model.BakedModel;\n", "")
+    s = s.replace("originalImage.getPixelRGBA(x, y)", "originalImage.getPixel(x, y)")
+    p.write_text(s, encoding="utf-8")
+
 # The old Fabric port of ForgeConfigAPI embeds 1.21 intermediary access wideners.
 # Replace only the Fabric config adapter with an equivalent scalar TOML adapter;
 # common config registry, categories, annotations, runtime hooks, and commands stay intact.
