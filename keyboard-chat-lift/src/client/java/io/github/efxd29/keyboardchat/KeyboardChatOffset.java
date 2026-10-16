@@ -1,6 +1,6 @@
 package io.github.efxd29.keyboardchat;
 
-/** Reads the active keyboard overlap from Zalith's Android-to-JVM IME bridge. */
+/** Reads the live IME height published by Zalith's ChatImeInsetBridge. */
 public final class KeyboardChatOffset {
     private KeyboardChatOffset() {
     }

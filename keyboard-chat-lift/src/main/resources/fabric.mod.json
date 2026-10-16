@@ -3,7 +3,7 @@
   "id": "keyboardchat",
   "version": "${version}",
   "name": "Keyboard Chat Lift",
-  "description": "Positions the original vanilla chat above the real Android IME height reported by the Zalith launcher bridge.",
+  "description": "Moves the original vanilla chat based on the live IME inset published by Zalith's Android bridge.",
   "authors": ["efxd29"],
   "contact": {
     "sources": "https://github.com/efxd29/Mod-Compile/tree/build-keyboard-chat-lift-mc26.3/keyboard-chat-lift"
