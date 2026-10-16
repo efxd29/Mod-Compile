@@ -35,9 +35,17 @@ if kind == "watut":
     put("coroutil_version", "1.3.8")
 props.write_text(s, encoding="utf-8")
 
+# Minecraft 26.3 Loom expects official-namespace access widener headers.
+aw_path = root / f"src/main/resources/{kind}.accesswidener"
+if aw_path.exists():
+    aw = aw_path.read_text(encoding="utf-8")
+    aw = re.sub(r"(?m)^accessWidener(\\s+v2\\s+)named\\s*$", r"accessWidener\\1official", aw, count=1)
+    aw_path.write_text(aw, encoding="utf-8")
+
 build = root / "build_fabric.gradle"
 g = build.read_text(encoding="utf-8")
 g = g.replace("id 'fabric-loom' version '1.6-SNAPSHOT'", "id 'net.fabricmc.fabric-loom' version '1.18-SNAPSHOT'")
+g = g.replace("loom {", "loom {\\n\\tuseLegacyMixinAp = true", 1)
 g = re.sub(r"(?ms)^[ \t]*mappings\(loom\.layered\s*\{.*?^[ \t]*\}\)[ \t]*\n", "", g)
 g = re.sub(r'(?m)^[ \t]*include\(modImplementation\("curse\.maven:forge-config-api-port-fabric-547434:5427493"\)\)\s*\n', "", g)
 g = re.sub(r"(?m)^[ \t]*implementation ['\"]com\.electronwill\.night-config:(?:core|toml):[^'\"]+['\"]\s*\n", "", g)
