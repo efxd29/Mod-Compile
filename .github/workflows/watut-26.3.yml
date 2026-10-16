@@ -53,10 +53,12 @@ jobs:
         continue-on-error: true
         shell: bash
         run: |
-          set -o pipefail
+          set +e
           cd CoroUtil
           gradle --no-daemon --console=plain clean build publishToMavenLocal 2>&1 | tee ../coroutil-build.log
-          echo "COROUTIL_RC=${PIPESTATUS[0]}" >> "$GITHUB_ENV"
+          rc=${PIPESTATUS[0]}
+          echo "COROUTIL_RC=$rc" >> "$GITHUB_ENV"
+          exit 0
 
       - name: Build complete WATUT source against 26.3
         id: watut
@@ -64,10 +66,12 @@ jobs:
         continue-on-error: true
         shell: bash
         run: |
-          set -o pipefail
+          set +e
           cd WATUT
           gradle --no-daemon --console=plain clean build 2>&1 | tee ../watut-build.log
-          echo "WATUT_RC=${PIPESTATUS[0]}" >> "$GITHUB_ENV"
+          rc=${PIPESTATUS[0]}
+          echo "WATUT_RC=$rc" >> "$GITHUB_ENV"
+          exit 0
 
       - name: Package JARs, source snapshot, and diagnostics
         if: always()
@@ -75,8 +79,11 @@ jobs:
         run: |
           mkdir -p artifacts/diagnostics artifacts/source
           cp coroutil-build.log watut-build.log artifacts/diagnostics/ 2>/dev/null || true
-          cp CoroUtil/build/libs/*.jar artifacts/ 2>/dev/null || true
-          cp WATUT/build/libs/*.jar artifacts/ 2>/dev/null || true
+          for jar in CoroUtil/build/libs/*.jar WATUT/build/libs/*.jar; do
+            [ -f "$jar" ] || continue
+            case "$jar" in *-dev.jar|*-sources.jar|*-javadoc.jar) continue ;; esac
+            cp "$jar" artifacts/
+          done
           cp -R CoroUtil/src WATUT/src artifacts/source/ 2>/dev/null || true
           {
             echo "Minecraft target: 26.3"
@@ -95,3 +102,12 @@ jobs:
           path: artifacts/
           if-no-files-found: warn
           retention-days: 30
+
+      - name: Verify both complete mod builds
+        if: always()
+        shell: bash
+        run: |
+          test "${COROUTIL_RC:-1}" = "0" || { echo "CoroUtil build failed"; exit 1; }
+          test "${WATUT_RC:-1}" = "0" || { echo "WATUT build failed"; exit 1; }
+          test -f artifacts/coroutil-fabric-26.3-1.3.8.jar || { echo "CoroUtil remapped JAR missing"; exit 1; }
+          test -f artifacts/watut-fabric-26.3-1.2.7-port.1.jar || { echo "WATUT remapped JAR missing"; exit 1; }
