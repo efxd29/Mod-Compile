@@ -7,8 +7,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * Reads Android's real IME bounds using reflection so the mod has no android.jar dependency.
- * UI hierarchy reads are dispatched to the Android UI thread; the game render thread never waits.
+ * Reads Android's IME bounds from the running launcher using reflection. UI hierarchy reads run on
+ * Android's UI thread; the Minecraft render thread never waits for a response.
  */
 public final class AndroidImeHeightProvider {
     private static final long REFRESH_INTERVAL_NANOS = 50_000_000L;
@@ -16,24 +16,50 @@ public final class AndroidImeHeightProvider {
     private static final int HIDDEN = -1;
     private static final AtomicBoolean REFRESH_QUEUED = new AtomicBoolean(false);
     private static final AtomicLong LAST_REQUEST_NS = new AtomicLong(0L);
+    private static final boolean ANDROID_RUNTIME = hasAndroidRuntime();
 
     private static volatile int overlapPx;
     private static volatile int surfaceHeightPx;
+    private static volatile boolean detectionKnown;
 
     private AndroidImeHeightProvider() {
     }
 
-    /** Converts the current keyboard overlap into scaled Minecraft GUI coordinates. */
+    /** Converts current keyboard overlap to Minecraft scaled GUI coordinates. */
     public static int getOffsetGui(final int guiHeight) {
         requestRefresh();
-        final int overlap = overlapPx;
-        final int surfaceHeight = surfaceHeightPx;
-        if (overlap <= 0 || surfaceHeight <= 0 || guiHeight <= 0) {
+        if (guiHeight <= 0) {
             return 0;
         }
-        final int converted = (int) Math.ceil((double) overlap * guiHeight / surfaceHeight);
-        // Five GUI pixels of clearance; never move the input outside the visible GUI.
-        return Math.max(0, Math.min(Math.max(0, guiHeight - 16), converted + 5));
+
+        final int overlap = overlapPx;
+        final int surfaceHeight = surfaceHeightPx;
+        if (detectionKnown && surfaceHeight > 0) {
+            if (overlap <= 0) {
+                return 0;
+            }
+            final int converted = (int) Math.ceil((double) overlap * guiHeight / surfaceHeight);
+            return Math.max(0, Math.min(Math.max(0, guiHeight - 16), converted + 5));
+        }
+
+        // Last-resort Android-only safety positioning while activity/window introspection is
+        // unavailable. Keep retrying real IME detection, but don't leave the chat underneath
+        // the keyboard in launchers which hide their activity references from reflection.
+        // Desktop Minecraft is never affected by this fallback.
+        if (ANDROID_RUNTIME) {
+            return Math.min(Math.max(0, guiHeight - 16),
+                    Math.max(80, Math.round(guiHeight * 0.56F)));
+        }
+        return 0;
+    }
+
+    private static boolean hasAndroidRuntime() {
+        try {
+            Class.forName("android.app.Activity");
+            return true;
+        } catch (Throwable ignored) {
+            return false;
+        }
     }
 
     private static void requestRefresh() {
@@ -47,8 +73,7 @@ public final class AndroidImeHeightProvider {
 
         final Object activity = findCurrentActivity();
         if (activity == null) {
-            overlapPx = 0;
-            surfaceHeightPx = 0;
+            detectionKnown = false;
             REFRESH_QUEUED.set(false);
             return;
         }
@@ -57,18 +82,20 @@ public final class AndroidImeHeightProvider {
             try {
                 captureOnUiThread(activity);
             } catch (Throwable ignored) {
-                // Android/launcher API differences must never crash Minecraft.
+                detectionKnown = false;
             } finally {
                 REFRESH_QUEUED.set(false);
             }
         };
 
         try {
-            final Class<?> activityClass = Class.forName("android.app.Activity");
-            activityClass.getMethod("runOnUiThread", Runnable.class).invoke(activity, capture);
+            Class.forName("android.app.Activity")
+                    .getMethod("runOnUiThread", Runnable.class)
+                    .invoke(activity, capture);
         } catch (Throwable ignored) {
-            // Best-effort fallback: some Android runtimes restrict reflective Activity access.
-            capture.run();
+            // Some forks use alternate Activity implementations; preserve safety if dispatch fails.
+            detectionKnown = false;
+            REFRESH_QUEUED.set(false);
         }
     }
 
@@ -76,41 +103,44 @@ public final class AndroidImeHeightProvider {
         final Object window = invoke(activity, "getWindow");
         final Object decor = invoke(window, "getDecorView");
         if (decor == null) {
-            overlapPx = 0;
-            surfaceHeightPx = 0;
+            detectionKnown = false;
             return;
         }
 
         Object gameSurface = readField(activity, "gameSurfaceView");
-        if (gameSurface == null) {
+        if (!isUsableView(gameSurface)) {
             gameSurface = findRenderSurface(decor, 0);
         }
-        if (gameSurface == null) {
+        if (!isUsableView(gameSurface)) {
             gameSurface = decor;
         }
 
         final int surfaceHeight = intValue(invoke(gameSurface, "getHeight"), 0);
-        surfaceHeightPx = surfaceHeight;
         if (surfaceHeight <= 0) {
-            overlapPx = 0;
+            detectionKnown = false;
             return;
         }
+        surfaceHeightPx = surfaceHeight;
 
-        final int imeTop = getKeyboardTopOnScreen(activity, decor);
-        if (imeTop == HIDDEN || imeTop == UNKNOWN) {
+        int imeTop = getKeyboardTopOnScreen(activity, decor);
+        if (imeTop == UNKNOWN) {
+            detectionKnown = false;
+            return;
+        }
+        if (imeTop == HIDDEN) {
             overlapPx = 0;
+            detectionKnown = true;
             return;
         }
 
         final int[] surfaceLocation = locationOnScreen(gameSurface);
         final int surfaceBottom = surfaceLocation[1] + surfaceHeight;
-        // Count only the part of the IME that actually overlaps the rendered game surface.
-        // Zalith can translate that surface upward itself; using the full IME height would
-        // double-count that movement and over-shift the chat.
+        // Use actual overlap rather than full keyboard height, since Zalith can move the game
+        // surface upward in response to the IME itself.
         overlapPx = Math.max(0, surfaceBottom - imeTop);
+        detectionKnown = true;
     }
 
-    /** Returns the IME top edge in screen pixels, HIDDEN, or UNKNOWN. */
     private static int getKeyboardTopOnScreen(final Object activity, final Object decor) {
         try {
             final Object insets = invoke(decor, "getRootWindowInsets");
@@ -121,7 +151,10 @@ public final class AndroidImeHeightProvider {
                     final boolean visible = Boolean.TRUE.equals(
                             insets.getClass().getMethod("isVisible", int.class).invoke(insets, imeType));
                     if (!visible) {
-                        return HIDDEN;
+                        // Confirm via the visible-frame fallback before declaring the IME hidden;
+                        // some launcher versions have stale root insets during keyboard animation.
+                        final int fallback = getKeyboardTopFromVisibleFrame(activity, decor);
+                        return fallback == UNKNOWN ? HIDDEN : fallback;
                     }
 
                     final Object imeInsets = insets.getClass().getMethod("getInsets", int.class)
@@ -135,18 +168,17 @@ public final class AndroidImeHeightProvider {
                             return locationOnScreen(rootView)[1] + rootHeight - imeBottom;
                         }
                     }
-                    // Some floating IMEs report visibility but no docked bottom inset.
                 } catch (Throwable unsupportedImeApi) {
-                    // Use the compatibility path on older Android releases.
+                    // Older Android: use the display-frame path below.
                 }
             }
         } catch (Throwable ignored) {
-            // Use the compatibility path when root insets are unavailable.
+            // Root window insets unavailable: use the compatibility path.
         }
+
         return getKeyboardTopFromVisibleFrame(activity, decor);
     }
 
-    /** Compatibility path for Android releases/configurations without WindowInsets.Type.ime(). */
     private static int getKeyboardTopFromVisibleFrame(final Object activity, final Object decor) {
         try {
             final Class<?> rectClass = Class.forName("android.graphics.Rect");
@@ -165,7 +197,6 @@ public final class AndroidImeHeightProvider {
             }
 
             final int bottomGap = screenHeight - visibleBottom;
-            // Avoid treating the navigation bar/status area as a keyboard.
             if (bottomGap < Math.max(120, screenHeight / 8)) {
                 return HIDDEN;
             }
@@ -175,9 +206,18 @@ public final class AndroidImeHeightProvider {
         }
     }
 
-    /** Prefer Zalith's VMActivity, then another unpaused Android activity (for launcher forks). */
+    /**
+     * On modern Android, explicitly unhide only the ActivityThread records needed for locating
+     * Zalith's VMActivity. If that is unavailable, prefer SDL's active Activity before a generic
+     * foreground activity to avoid measuring the launcher's previous screen.
+     */
     private static Object findCurrentActivity() {
-        Object foregroundCandidate = null;
+        enableActivityThreadReflection();
+        Object bestVmActivity = null;
+        Object focusedVmActivity = null;
+        Object focusedSurfaceActivity = null;
+        Object otherSurfaceActivity = null;
+
         try {
             final Class<?> threadClass = Class.forName("android.app.ActivityThread");
             final Method currentThread = threadClass.getDeclaredMethod("currentActivityThread");
@@ -186,37 +226,88 @@ public final class AndroidImeHeightProvider {
             final Field activitiesField = threadClass.getDeclaredField("mActivities");
             activitiesField.setAccessible(true);
             final Object activities = activitiesField.get(thread);
+
             if (activities instanceof Map<?, ?> map) {
                 for (Object record : map.values()) {
                     final Object activity = readField(record, "activity");
                     if (activity == null || Boolean.TRUE.equals(readField(record, "paused"))) {
                         continue;
                     }
-                    if (activity.getClass().getName().endsWith(".VMActivity")) {
-                        return activity;
-                    }
-                    if (foregroundCandidate == null) {
-                        foregroundCandidate = activity;
+
+                    final boolean isVmActivity =
+                            activity.getClass().getName().endsWith(".VMActivity");
+                    final boolean hasSurface = hasRenderSurface(
+                            readField(activity, "gameSurfaceView")) ||
+                            hasRenderSurface(invoke(invoke(activity, "getWindow"), "getDecorView"));
+                    final boolean focused = hasWindowFocus(activity);
+
+                    if (isVmActivity) {
+                        if (focused) {
+                            focusedVmActivity = activity;
+                            break;
+                        }
+                        if (bestVmActivity == null) {
+                            bestVmActivity = activity;
+                        }
+                    } else if (hasSurface && focused && focusedSurfaceActivity == null) {
+                        focusedSurfaceActivity = activity;
+                    } else if (hasSurface && otherSurfaceActivity == null) {
+                        otherSurfaceActivity = activity;
                     }
                 }
             }
         } catch (Throwable ignored) {
-            // Android may restrict hidden ActivityThread APIs. Try SDL's activity reference next.
+            // The targeted SDL reference below works on launcher builds that restrict hidden APIs.
         }
 
-        if (foregroundCandidate != null) {
-            return foregroundCandidate;
+        if (focusedVmActivity != null) return focusedVmActivity;
+        if (bestVmActivity != null) return bestVmActivity;
+
+        final Object sdlActivity = findSdlActivity();
+        if (sdlActivity != null) return sdlActivity;
+        if (focusedSurfaceActivity != null) return focusedSurfaceActivity;
+        return otherSurfaceActivity;
+    }
+
+    private static void enableActivityThreadReflection() {
+        try {
+            final Class<?> vmRuntimeClass = Class.forName("dalvik.system.VMRuntime");
+            final Method getRuntime = vmRuntimeClass.getDeclaredMethod("getRuntime");
+            getRuntime.setAccessible(true);
+            final Object runtime = getRuntime.invoke(null);
+            final Method exemptions = vmRuntimeClass.getDeclaredMethod(
+                    "setHiddenApiExemptions", String[].class);
+            exemptions.setAccessible(true);
+            exemptions.invoke(runtime, (Object) new String[]{
+                    "Landroid/app/ActivityThread;",
+                    "Landroid/app/ActivityThread$ActivityClientRecord;"
+            });
+        } catch (Throwable ignored) {
+            // Continue with public/launcher-specific fallbacks if runtime doesn't allow exemptions.
         }
+    }
+
+    private static Object findSdlActivity() {
         try {
             final Class<?> sdlActivity = Class.forName("org.libsdl.app.SDLActivity");
             final Object activity = readStaticField(sdlActivity, "mSingleton");
-            if (activity != null) {
-                return activity;
-            }
+            return activity != null && invoke(activity, "getWindow") != null ? activity : null;
         } catch (Throwable ignored) {
-            // Other launchers may not bundle SDL.
+            return null;
         }
-        return null;
+    }
+
+    private static boolean hasWindowFocus(final Object activity) {
+        final Object decor = invoke(invoke(activity, "getWindow"), "getDecorView");
+        return Boolean.TRUE.equals(invoke(decor, "hasWindowFocus"));
+    }
+
+    private static boolean isUsableView(final Object view) {
+        return view != null && invoke(view, "getHeight") instanceof Number;
+    }
+
+    private static boolean hasRenderSurface(final Object view) {
+        return view != null && findRenderSurface(view, 0) != null;
     }
 
     private static Object findRenderSurface(final Object view, final int depth) {
@@ -231,9 +322,7 @@ public final class AndroidImeHeightProvider {
         for (int i = 0; i < childCount; i++) {
             final Object child = invoke(view, "getChildAt", new Class<?>[]{int.class}, i);
             final Object found = findRenderSurface(child, depth + 1);
-            if (found != null) {
-                return found;
-            }
+            if (found != null) return found;
         }
         return null;
     }
@@ -250,26 +339,22 @@ public final class AndroidImeHeightProvider {
         return location;
     }
 
-    private static Object invoke(final Object target, final String methodName) {
-        return invoke(target, methodName, new Class<?>[0]);
+    private static Object invoke(final Object target, final String name) {
+        return invoke(target, name, new Class<?>[0]);
     }
 
-    private static Object invoke(final Object target, final String methodName,
+    private static Object invoke(final Object target, final String name,
                                  final Class<?>[] parameterTypes, final Object... arguments) {
-        if (target == null) {
-            return null;
-        }
+        if (target == null) return null;
         try {
-            return target.getClass().getMethod(methodName, parameterTypes).invoke(target, arguments);
+            return target.getClass().getMethod(name, parameterTypes).invoke(target, arguments);
         } catch (Throwable ignored) {
             return null;
         }
     }
 
     private static Object readField(final Object target, final String name) {
-        if (target == null) {
-            return null;
-        }
+        if (target == null) return null;
         Class<?> type = target.getClass();
         while (type != null) {
             try {

@@ -3,7 +3,7 @@
   "id": "keyboardchat",
   "version": "${version}",
   "name": "Keyboard Chat Lift",
-  "description": "Automatically positions the real vanilla chat above the detected Android virtual keyboard without resizing the Minecraft viewport.",
+  "description": "Tracks Android IME bounds for automatic vanilla chat positioning, with an Android-only safe fallback.",
   "authors": ["efxd29"],
   "contact": {
     "sources": "https://github.com/efxd29/Mod-Compile/tree/build-keyboard-chat-lift-mc26.3/keyboard-chat-lift"
