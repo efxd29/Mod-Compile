@@ -21,7 +21,7 @@ public abstract class ChatComponentMixin {
     )
     private int keyboardchat$raiseVanillaChatBottom(final GuiGraphicsExtractor graphics) {
         final int originalHeight = graphics.guiHeight();
-        if (Minecraft.getInstance().screen instanceof ChatScreen) {
+        if (Minecraft.getInstance().gui.screen() instanceof ChatScreen) {
             return originalHeight - KeyboardChatOffset.forGuiHeight(originalHeight);
         }
         return originalHeight;
