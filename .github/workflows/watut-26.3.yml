@@ -62,10 +62,34 @@ jobs:
           cd CoroUtil
           echo "### Patched Gradle configuration" | tee ../coroutil-build.log
           grep -nE 'mappings|include\\(|implementation|publisher|components\\.java' build.gradle | tee -a ../coroutil-build.log || true
-          gradle --no-daemon --console=plain --stacktrace clean build publishToMavenLocal 2>&1 | tee -a ../coroutil-build.log
+          gradle --no-daemon --console=plain --stacktrace clean build 2>&1 | tee -a ../coroutil-build.log
           rc=${PIPESTATUS[0]}
           echo "COROUTIL_RC=$rc" >> "$GITHUB_ENV"
           exit 0
+
+      - name: Install CoroUtil into temporary Maven Local
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          artifact="CoroUtil/build/libs/coroutil-fabric-26.3-1.3.8.jar"
+          if [ ! -f "$artifact" ]; then
+            echo "CoroUtil JAR missing; check coroutil-build.log"
+            exit 1
+          fi
+          dest="$HOME/.m2/repository/com/corosus/coroutil/coroutil-fabric/26.3-1.3.8"
+          mkdir -p "$dest"
+          cp "$artifact" "$dest/coroutil-fabric-26.3-1.3.8.jar"
+          cat > "$dest/coroutil-fabric-26.3-1.3.8.pom" <<'POM'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <project xmlns="http://maven.apache.org/POM/4.0.0">
+            <modelVersion>4.0.0</modelVersion>
+            <groupId>com.corosus.coroutil</groupId>
+            <artifactId>coroutil-fabric</artifactId>
+            <version>26.3-1.3.8</version>
+            <packaging>jar</packaging>
+          </project>
+          POM
 
       - name: Build complete WATUT source against 26.3
         id: watut
