@@ -186,7 +186,7 @@ public class ModConfigDataFabric extends ModConfigData {
         ConfigParams params = field.getAnnotation(ConfigParams.class);
         if (params == null) return value;
         if (value instanceof Integer v) {
-            long min = (long)Math.ceil(params.min()), max = (long)Math.floor(params.max());
+            long min = (long)params.min(), max = (long)params.max();
             return (int)Math.max(min, Math.min(max, v));
         }
         if (value instanceof Double v) return Math.max(params.min(), Math.min(params.max(), v));
