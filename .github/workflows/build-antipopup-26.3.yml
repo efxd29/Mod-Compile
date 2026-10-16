@@ -1,0 +1,63 @@
+name: Build AntiPopup Fabric 26.3
+on:
+  push:
+    paths:
+      - 'zips/antipopup-26.3-part*.b64'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - name: Reassemble Minecraft 26.3 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat zips/antipopup-26.3-part*.b64 | base64 --decode > /tmp/antipopup-26.3.zip
+          ACTUAL="$(git hash-object /tmp/antipopup-26.3.zip)"
+          echo "Source archive SHA: $ACTUAL"
+          test "$ACTUAL" = "df0ddf8bf9181ea1039d9f1f505a7ced3c470f08"
+          mkdir -p /tmp/antipopup-source
+          unzip -q /tmp/antipopup-26.3.zip -d /tmp/antipopup-source
+          ROOT=/tmp/antipopup-source/antipopup
+          test -f "$ROOT/build.gradle"
+          test -f "$ROOT/src/main/java/com/github/kaspiandev/antipopup/fabric/AntiPopup.java"
+          grep -q '^minecraft_version=26.3$' "$ROOT/gradle.properties"
+          grep -q '"minecraft": "~26.3"' "$ROOT/src/main/resources/fabric.mod.json"
+      - name: Install Gradle 9.7.1
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 --retry-delay 2 https://services.gradle.org/distributions/gradle-9.7.1-bin.zip -o /tmp/gradle.zip
+          unzip -q /tmp/gradle.zip -d "$HOME"
+          echo "$HOME/gradle-9.7.1/bin" >> "$GITHUB_PATH"
+      - name: Compile AntiPopup
+        working-directory: /tmp/antipopup-source/antipopup
+        shell: bash
+        run: gradle build --no-daemon --console=plain
+      - name: Verify and stage Minecraft 26.3 JAR
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT=/tmp/antipopup-source/antipopup
+          JAR="$(find "$ROOT/build/libs" -maxdepth 1 -type f -name '*.jar' ! -name '*sources*' ! -name '*dev*' -size +0c | head -1)"
+          test -n "$JAR"
+          mkdir -p out
+          cp "$JAR" out/AntiPopup-Fabric-26.3-13.3.jar
+          unzip -t out/AntiPopup-Fabric-26.3-13.3.jar
+          unzip -p out/AntiPopup-Fabric-26.3-13.3.jar fabric.mod.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AntiPopup-Fabric-26.3-13.3
+          path: out/AntiPopup-Fabric-26.3-13.3.jar
+          if-no-files-found: error
+          retention-days: 7
