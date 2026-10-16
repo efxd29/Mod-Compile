@@ -224,6 +224,21 @@ jobs:
               s=p.read_text().replace("net.minecraft.network.packet.s2c.play", "net.minecraft.network.protocol.game")
               s=s.replace("PlayerListS2CPacket", "ClientboundPlayerInfoUpdatePacket")
               p.write_text(s)
+          # Match Java public type names to their files and update the packet callback API.
+          renames = [
+              (root/"main/java/me/zombii/mostly_server_capes/network/PlayerListS2CPacketEntriesUpdater.java",
+               root/"main/java/me/zombii/mostly_server_capes/network/ClientboundPlayerInfoUpdatePacketEntriesUpdater.java"),
+              (root/"main/java/me/zombii/mostly_server_capes/mixin/PlayerListS2CPacketMixin.java",
+               root/"main/java/me/zombii/mostly_server_capes/mixin/ClientboundPlayerInfoUpdatePacketMixin.java"),
+          ]
+          for oldpath,newpath in renames:
+              if oldpath.exists(): oldpath.rename(newpath)
+          for p in root.rglob("*.java"):
+              s=p.read_text()
+              s=s.replace("PacketSendListener", "ChannelFutureListener")
+              s=s.replace("newProfile.getProperties()", "newProfile.properties()")
+              s=s.replace("import net.minecraft.network.protocol.PacketSendListener;\n", "")
+              p.write_text(s)
           # The interface file is deliberately renamed because @Accessor mapping follows target names.
           for p in root.rglob("*.java"):
               s=p.read_text()
