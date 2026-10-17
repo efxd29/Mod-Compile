@@ -2284,3 +2284,101 @@ if kind == "watut":
         "return (float)(super.getQuadSize(partialTick) * worldScale * ConfigClient.particleSizeScale);"
     )
     dynamic_path.write_text(dynamic, encoding="utf-8")
+
+
+# Critical runtime fixes for the complete dynamic-GUI path on the 26.3 render backend.
+if kind == "watut":
+    java_root = root / "src/main/java/com/corosus/watut"
+
+    # 26.3 removed RenderTarget.clear()/setClearColor(). Create a real depth attachment and clear via RenderPearl.
+    sc_path = java_root / "client/screen/ScreenCapture26.java"
+    sc = sc_path.read_text(encoding="utf-8")
+    imports = [
+        "import com.mojang.blaze3d.systems.RenderSystem;",
+        "import org.joml.Vector4f;",
+    ]
+    anchor = "import com.mojang.blaze3d.pipeline.RenderTarget;"
+    if anchor in sc:
+        sc = sc.replace(anchor, anchor + "\n" + "\n".join(line for line in imports if line not in sc), 1)
+    sc = sc.replace(
+        "Object colorFormat = findRgbaFormat(p[3]);\n                constructor.setAccessible(true);\n                captureTarget = (RenderTarget)constructor.newInstance(\"watut-screen-preview\", w, h, colorFormat, null);",
+        "Object colorFormat = findRgbaFormat(p[3]);\n                Object depthFormat = findDepthFormat(p[4]);\n                constructor.setAccessible(true);\n                captureTarget = (RenderTarget)constructor.newInstance(\"watut-screen-preview\", w, h, colorFormat, depthFormat);"
+    )
+    if "private static Object findDepthFormat" not in sc:
+        sc = sc.replace(
+            "    private static void ensureCaptureRenderer(GameRenderer gameRenderer, Minecraft mc) throws Exception {",
+            """    private static Object findDepthFormat(Class<?> formatType) {
+        try {
+            if (formatType.isEnum()) {
+                for (Object value : formatType.getEnumConstants()) {
+                    if (((Enum<?>)value).name().equals("D32_FLOAT")) return value;
+                }
+            }
+            Field field = formatType.getField("D32_FLOAT");
+            return field.get(null);
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException("Minecraft 26.3 depth format not available", e);
+        }
+    }
+
+    private static void ensureCaptureRenderer(GameRenderer gameRenderer, Minecraft mc) throws Exception {""",
+            1
+        )
+    sc = sc.replace(
+        """            invokeByName(captureTarget, "setClearColor", 0.0F, 0.0F, 0.0F, 0.0F);
+            try {
+                invokeByName(captureTarget, "clear", false);
+            } catch (NoSuchMethodException noBooleanClear) {
+                invokeByName(captureTarget, "clear");
+            }""",
+        """            RenderSystem.getDevice().createCommandEncoder().clearColorAndDepthTextures(
+                    captureTarget.getColorTexture(), new Vector4f(0.0F, 0.0F, 0.0F, 0.0F),
+                    captureTarget.getDepthTexture(), 0.0);"""
+    )
+    sc_path.write_text(sc, encoding="utf-8")
+
+    # In 26.3 Layer.translucent controls the render phase. Screen/item textures must use the translucent phase.
+    sd_path = java_root / "client/screen/ScreenData.java"
+    sd = sd_path.read_text(encoding="utf-8")
+    sd = sd.replace("Object[] args = new Object[] { Boolean.FALSE, id, null, null };",
+                    "Object[] args = new Object[] { Boolean.TRUE, id, null, null };")
+    sd_path.write_text(sd, encoding="utf-8")
+
+    # Restore original WATUT particle sizing: dynamic previews are twice the ordinary GUI sprite scale,
+    # and the optional full-screen preview is twice that again.
+    dynamic_path = java_root / "particle/ParticleDynamic.java"
+    dynamic = dynamic_path.read_text(encoding="utf-8")
+    dynamic = dynamic.replace(
+        "float worldScale = ConfigServerControlledSyncedToClient.dynamicGuiShowClientsEntireScreen ? 2.0F : 1.0F;",
+        "float worldScale = ConfigServerControlledSyncedToClient.dynamicGuiShowClientsEntireScreen ? 4.0F : 2.0F;"
+    )
+    dynamic_path.write_text(dynamic, encoding="utf-8")
+
+    # The network size field is the expected decompressed pixel count, not the compressed buffer capacity.
+    # Send each preview's own dimensions; in full-screen mode they differ from the default 256x256.
+    pm_path = java_root / "PlayerStatusManagerClient.java"
+    pm = pm_path.read_text(encoding="utf-8")
+    start = pm.find("    public void sendScreenRenderData(PlayerStatus status) {")
+    end = pm.find("    public void sendTyping(", start)
+    if start >= 0 and end > start:
+        method = pm[start:end]
+        method = method.replace(
+            "data.putInt(WatutNetworking.NBTDataPlayerScreenCompressedPixelDataSize, status.getScreenData().getTexturePixelData().capacity());",
+            "data.putInt(WatutNetworking.NBTDataPlayerScreenCompressedPixelDataSize, status.getScreenData().getWidth() * status.getScreenData().getHeight() * ScreenParticleRenderer.bytesPerPixel);"
+        )
+        method = method.replace(
+            "data.putInt(WatutNetworking.NBTDataPlayerScreenWidth, ScreenParticleRenderer.getInstance().widthScaledDown);",
+            "data.putInt(WatutNetworking.NBTDataPlayerScreenWidth, status.getScreenData().getWidth());"
+        )
+        method = method.replace(
+            "data.putInt(WatutNetworking.NBTDataPlayerScreenHeight, ScreenParticleRenderer.getInstance().heightScaledDown);",
+            "data.putInt(WatutNetworking.NBTDataPlayerScreenHeight, status.getScreenData().getHeight());"
+        )
+        pm = pm[:start] + method + pm[end:]
+        pm_path.write_text(pm, encoding="utf-8")
+
+    # The full-screen mode may decode up to 4096x4096 RGBA (64 MiB).
+    helper_path = java_root / "client/screen/RenderHelper.java"
+    helper = helper_path.read_text(encoding="utf-8")
+    helper = helper.replace("expectedSize > 16 * 1024 * 1024", "expectedSize > 64 * 1024 * 1024")
+    helper_path.write_text(helper, encoding="utf-8")
