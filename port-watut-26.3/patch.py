@@ -435,6 +435,30 @@ if kind == "watut":
     # Dynamic screen rendering used removed immediate-mode GL/shader APIs; keep status/chat/pose logic and packet decoding intact.
     pm.write_text(text, encoding="utf-8")
 
+    # Text overlay now appends to the existing GUI extraction; do not create a second buffer source.
+    pm = java_root / "PlayerStatusManagerClient.java"
+    text = pm.read_text(encoding="utf-8")
+    text = text.replace("import net.minecraft.client.gui.GuiGraphicsExtractor;", "import net.minecraft.client.gui.GuiGraphicsExtractor;\nimport net.minecraft.network.chat.Component;")
+    text = re.sub(r"(?s)    public void onGuiRender\(\) \{.*?\n    \}\n\n    public String getTypingPlayers",
+                  """    public void onGuiRender(GuiGraphicsExtractor graphics) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.gui.screen instanceof ChatScreen && mc.getConnection() != null && ConfigClient.screenTypingVisible && ConfigServerControlledSyncedToClient.screenTypingVisible) {
+            graphics.text(mc.font, Component.literal(getTypingPlayers()), 2 + ConfigClient.screenTypingRelativePosition_X,
+                    mc.getWindow().getGuiScaledHeight() - 50 + ConfigClient.screenTypingRelativePosition_Y, 0xFFFFFF);
+        }
+    }
+
+    public String getTypingPlayers""", text, count=1)
+    text = text.replace("profile.getName()", "profile.name()")
+    text = text.replace("getProfile().getId()", "getProfile().id()")
+    pm.write_text(text, encoding="utf-8")
+
+    gp = java_root / "mixin/client/GuiRender.java"
+    if gp.exists():
+        t = gp.read_text(encoding="utf-8").replace("WatutMod.getPlayerStatusManagerClient().onGuiRender();",
+                                                   "WatutMod.getPlayerStatusManagerClient().onGuiRender(guiGraphics);")
+        gp.write_text(t, encoding="utf-8")
+
     # Move the world particles to 26.3's extract-based single-quad renderer.
     particle_base = r'''package com.corosus.watut.particle;
 
