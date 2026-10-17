@@ -1,1 +1,3 @@
 Trigger GitHub Actions build for WATUT Minecraft 26.3 Fabric.
+
+Retry after fixing Gradle invocation.
