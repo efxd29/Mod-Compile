@@ -905,3 +905,14 @@ if kind == "watut":
         text = text.replace("import net.minecraft.client.particle.ParticleRenderType;\n", "")
         text = text.replace("import net.minecraft.client.particle.ParticleEngine;\n", "")
         client_init.write_text(text, encoding="utf-8")
+
+
+# Repair accidental text/package substitutions from broad API regexes above.
+if kind == "watut":
+    java_root = root / "src/main/java/com/corosus/watut"
+    for source in java_root.rglob("*.java"):
+        text = source.read_text(encoding="utf-8")
+        text = text.replace("net.minecraft.client.gui.screen()s", "net.minecraft.client.gui.screens")
+        text = re.sub(r'\.getStringOr\(\s*,\s*""\)', '.getString()', text)
+        if text != source.read_text(encoding="utf-8"):
+            source.write_text(text, encoding="utf-8")
