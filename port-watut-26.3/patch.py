@@ -2491,7 +2491,7 @@ public abstract class QuadParticleAspect {
                 }
             } else {
                 int srcLeft = Math.max(0, (srcWidth - outWidth) / 2);"""
-    sc_new, substitutions = re.subn(pattern, replacement, sc, count=1)
+    sc_new, substitutions = re.subn(pattern, replacement, sc, count=1, flags=re.S)
     if substitutions != 1:
         raise SystemExit("Could not locate full-screen capture scaler; no build should be produced")
     sc_path.write_text(sc_new, encoding="utf-8")
