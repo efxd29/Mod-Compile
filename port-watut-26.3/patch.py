@@ -1746,3 +1746,14 @@ public abstract class ScreenBackgroundCapture26 {
             if name not in client_mixins:
                 client_mixins.append(name)
         mixin_config.write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
+
+
+# New 26.3 RenderTarget APIs no longer expose Minecraft.ON_OSX; probe the clear overload.
+if kind == "watut":
+    capture_path = root / "src/main/java/com/corosus/watut/client/screen/ScreenCapture26.java"
+    text = capture_path.read_text(encoding="utf-8")
+    text = text.replace(
+        'invokeByName(captureTarget, "clear", Minecraft.ON_OSX);',
+        'try { invokeByName(captureTarget, "clear", false); } catch (NoSuchMethodException noBooleanClear) { invokeByName(captureTarget, "clear"); }'
+    )
+    capture_path.write_text(text, encoding="utf-8")
