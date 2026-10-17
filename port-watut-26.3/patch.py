@@ -1328,3 +1328,53 @@ if kind == "watut":
     if anchor in text:
         text = text.replace(anchor, anchor + "\n" + "\n".join(line for line in imports if line not in text), 1)
     rh.write_text(text, encoding="utf-8")
+
+
+# Build a per-screen particle layer by cloning the vanilla translucent layer's pipeline,
+# because 26.3 no longer exposes the old PARTICLE_TRANSLUCENT constant.
+if kind == "watut":
+    sd = root / "src/main/java/com/corosus/watut/client/screen/ScreenData.java"
+    text = sd.read_text(encoding="utf-8")
+    text = text.replace(
+        "import net.minecraft.client.Minecraft;",
+        "import net.minecraft.client.Minecraft;\nimport net.minecraft.client.gui.screens.Screen;\nimport java.lang.reflect.Constructor;\nimport java.lang.reflect.Field;\nimport java.lang.reflect.Modifier;"
+    )
+    text = text.replace("import net.minecraft.client.renderer.RenderPipelines;\n", "")
+    text = text.replace(
+        "new SingleQuadParticle.Layer(false, textureId, RenderPipelines.PARTICLE_TRANSLUCENT, null)",
+        "makeLayer(textureId)"
+    )
+    anchor = "    public Identifier getTextureId() { return textureId; }"
+    helper = r'''    private static SingleQuadParticle.Layer makeLayer(Identifier id) {
+        try {
+            SingleQuadParticle.Layer prototype = SingleQuadParticle.Layer.TRANSLUCENT;
+            for (Constructor<?> constructor : SingleQuadParticle.Layer.class.getDeclaredConstructors()) {
+                Class<?>[] types = constructor.getParameterTypes();
+                if (types.length != 4 || types[0] != boolean.class || !types[1].isAssignableFrom(Identifier.class)) continue;
+                Object[] args = new Object[] { Boolean.FALSE, id, null, null };
+                for (int index = 2; index < 4; index++) {
+                    for (Field field : SingleQuadParticle.Layer.class.getDeclaredFields()) {
+                        if (Modifier.isStatic(field.getModifiers())) continue;
+                        if (types[index].isAssignableFrom(field.getType()) || field.getType().isAssignableFrom(types[index])) {
+                            field.setAccessible(true);
+                            Object value = field.get(prototype);
+                            if (value != null && types[index].isInstance(value)) {
+                                args[index] = value;
+                                break;
+                            }
+                        }
+                    }
+                }
+                constructor.setAccessible(true);
+                return (SingleQuadParticle.Layer)constructor.newInstance(args);
+            }
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException("Could not create WATUT screen texture particle layer", e);
+        }
+        throw new IllegalStateException("Minecraft 26.3 translucent particle layer constructor changed");
+    }
+
+'''
+    if anchor in text and "private static SingleQuadParticle.Layer makeLayer" not in text:
+        text = text.replace(anchor, helper + anchor, 1)
+    sd.write_text(text, encoding="utf-8")
