@@ -111,9 +111,10 @@ jobs:
 
       - name: Compile Fabric JAR
         shell: bash
+        working-directory: watut
         run: |
           set +e
-          gradle -p watut -b watut/build_fabric.gradle build --no-daemon --console=plain --stacktrace > "$GITHUB_WORKSPACE/out-build.log" 2>&1
+          gradle -b build_fabric.gradle build --no-daemon --console=plain --stacktrace > "$GITHUB_WORKSPACE/out-build.log" 2>&1
           rc=$?
           set -e
           cat "$GITHUB_WORKSPACE/out-build.log"
