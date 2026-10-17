@@ -2504,3 +2504,151 @@ public abstract class QuadParticleAspect {
         if "client.QuadParticleAspect" not in client_mixins:
             client_mixins.append("client.QuadParticleAspect")
         mixin_config.write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
+
+
+# Rebind original gameplay hooks to Minecraft 26.3's renamed/signature-changed input/render APIs.
+if kind == "watut":
+    java_root = root / "src/main/java/com/corosus/watut"
+
+    setup_rotations = r'''package com.corosus.watut.mixin.client;
+
+import com.corosus.watut.WatutMod;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.model.EntityModel;
+import net.minecraft.client.model.PlayerModel;
+import net.minecraft.client.renderer.entity.state.AvatarRenderState;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.player.Player;
+import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+
+@Mixin(PlayerModel.class)
+public abstract class SetupRotationsInject {
+    @Inject(
+        method = "setupAnim(Lnet/minecraft/client/renderer/entity/state/AvatarRenderState;)V",
+        at = @At("TAIL"),
+        require = 0
+    )
+    private void watut$setupAvatarAnimation(AvatarRenderState state, CallbackInfo ci) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level == null || state == null) return;
+        Entity entity = mc.level.getEntity(state.id);
+        if (!(entity instanceof Player player)) return;
+        WatutMod.getPlayerStatusManagerClient().setupRotationsHook(
+            (EntityModel)(Object)this,
+            player,
+            state.walkAnimationPos,
+            state.walkAnimationSpeed,
+            state.ageInTicks,
+            state.yRot,
+            state.xRot
+        );
+    }
+}
+'''
+    (java_root / "mixin/client/SetupRotationsInject.java").write_text(setup_rotations, encoding="utf-8")
+
+    keyboard_mixin = r'''package com.corosus.watut.mixin.client;
+
+import com.corosus.watut.WatutMod;
+import net.minecraft.client.KeyboardHandler;
+import net.minecraft.client.input.KeyEvent;
+import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+
+@Mixin(KeyboardHandler.class)
+public abstract class KeyboardHandlerKeyPress {
+    @Inject(method = "keyPress(JILnet/minecraft/client/input/KeyEvent;)V", at = @At("TAIL"), require = 0)
+    private void watut$keyPress(long window, int action, KeyEvent event, CallbackInfo ci) {
+        WatutMod.getPlayerStatusManagerClient().onKey();
+    }
+}
+'''
+    (java_root / "mixin/client/KeyboardHandlerKeyPress.java").write_text(keyboard_mixin, encoding="utf-8")
+
+    mouse_mixin = r'''package com.corosus.watut.mixin.client;
+
+import com.corosus.watut.WatutMod;
+import net.minecraft.client.MouseHandler;
+import net.minecraft.client.input.MouseButtonInfo;
+import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+
+@Mixin(MouseHandler.class)
+public abstract class MouseHandlerOnPress {
+    @Inject(method = "onButton(JLnet/minecraft/client/input/MouseButtonInfo;I)V", at = @At("TAIL"), require = 0)
+    private void watut$mouseButton(long window, MouseButtonInfo buttonInfo, int action, CallbackInfo ci) {
+        WatutMod.getPlayerStatusManagerClient().onMouse(action != 0);
+    }
+}
+'''
+    (java_root / "mixin/client/MouseHandlerOnPress.java").write_text(mouse_mixin, encoding="utf-8")
+
+    # ContainerInput replaces the old ClickType argument on AbstractContainerMenu.doClick in 26.3.
+    click_mixin = r'''package com.corosus.watut.mixin;
+
+import com.corosus.watut.WatutMod;
+import net.minecraft.core.NonNullList;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.inventory.ContainerInput;
+import net.minecraft.world.inventory.Slot;
+import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Shadow;
+import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+
+@Mixin(AbstractContainerMenu.class)
+public abstract class AbstractContainerMenuDoClick {
+    @Shadow public final NonNullList<Slot> slots = NonNullList.create();
+
+    @Inject(method = "doClick", at = @At("HEAD"), require = 0)
+    private void doClickPre(int slotIndex, int button, ContainerInput input, Player player, CallbackInfo ci) {
+        if (!player.level().isClientSide()) {
+            WatutMod.getPlayerStatusManagerServer().doClickPre(
+                (AbstractContainerMenu)(Object)this, slotIndex, button, input, player);
+        }
+    }
+
+    @Inject(method = "doClick", at = @At("TAIL"), require = 0)
+    private void doClickPost(int slotIndex, int button, ContainerInput input, Player player, CallbackInfo ci) {
+        if (!player.level().isClientSide()) {
+            WatutMod.getPlayerStatusManagerServer().doClickPost(
+                (AbstractContainerMenu)(Object)this, slotIndex, button, input, player);
+        }
+    }
+}
+'''
+    (java_root / "mixin/AbstractContainerMenuDoClick.java").write_text(click_mixin, encoding="utf-8")
+
+    server_path = java_root / "PlayerStatusManagerServer.java"
+    server = server_path.read_text(encoding="utf-8")
+    if "import net.minecraft.world.inventory.ContainerInput;" not in server:
+        server = server.replace(
+            "import net.minecraft.world.inventory.ClickType;",
+            "import net.minecraft.world.inventory.ClickType;\nimport net.minecraft.world.inventory.ContainerInput;"
+        )
+    server = re.sub(r"(public void doClickPre\([^)]*?)ClickType pClickType", r"\1ContainerInput pClickType", server, count=1)
+    server = re.sub(r"(public void doClickPost\([^)]*?)ClickType pClickType", r"\1ContainerInput pClickType", server, count=1)
+    server = server.replace("if (pClickType == ClickType.PICKUP)", "if (pClickType == ContainerInput.PICKUP)")
+    server_path.write_text(server, encoding="utf-8")
+
+    # Ensure all new hooks are included in the active Fabric client mixin list.
+    mixin_config = root / "src/main/resources/watut_fabric.mixins.json"
+    if mixin_config.exists():
+        meta = json.loads(mixin_config.read_text(encoding="utf-8"))
+        client_mixins = meta.setdefault("client", [])
+        for name in ("client.SetupRotationsInject", "client.KeyboardHandlerKeyPress", "client.MouseHandlerOnPress"):
+            if name not in client_mixins:
+                client_mixins.append(name)
+        mixins = meta.setdefault("mixins", [])
+        if "AbstractContainerMenuDoClick" not in mixins:
+            mixins.append("AbstractContainerMenuDoClick")
+        mixin_config.write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
