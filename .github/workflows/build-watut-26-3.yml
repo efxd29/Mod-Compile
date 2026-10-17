@@ -1,21 +1,29 @@
-name: Build WATUT 26.3 Fabric
+name: Build WATUT Jonahnm source for Minecraft 26.3 Fabric
 
 on:
   push:
+    branches: [watut-26.3]
     paths:
+      - '.github/workflows/build-watut-26-3.yml'
       - 'zips/trigger-watut-26-3-build'
   workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: watut-jonahnm-26.3
+  cancel-in-progress: true
+
 jobs:
   build:
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
     steps:
-      - name: Checkout build controller
+      - name: Checkout build workflow
         uses: actions/checkout@v4
+        with:
+          ref: watut-26.3
 
       - name: Set up Java 25
         uses: actions/setup-java@v4
@@ -23,129 +31,104 @@ jobs:
           distribution: temurin
           java-version: '25'
 
-      - name: Get Jonahnm WATUT 26.2 source
-        shell: bash
-        run: git clone --depth 1 --branch 26.2 https://github.com/jonahnm/WATUT.git watut
+      - name: Set up Gradle 9.7.1
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.7.1'
 
-      - name: Retarget original-derived source to Minecraft 26.3
-        shell: bash
-        run: |
-          set -euo pipefail
-          python - <<'PY'
-          import json
-          import re
-          from pathlib import Path
-
-          root = Path("watut")
-          props = root / "gradle.properties"
-          s = props.read_text()
-
-          replacements = {
-              "minecraft_version": "26.3",
-              "yarn_mappings": "26.3+build.1",
-              "loader_version": "0.19.5",
-              "fabric_version": "0.163.0+26.3",
-              "mod_version": "26.3-1.2.8",
-              "neo_version_range": "[26.3,)",
-              "minecraft_version_range": "[26.3,27)",
-          }
-          for key, value in replacements.items():
-              pat = rf"(?m)^([ \t]*{re.escape(key)}[ \t]*=).*?$"
-              s, count = re.subn(pat, lambda m: m.group(1) + value, s, count=1)
-              if count == 0:
-                  if key in {"neo_version_range", "minecraft_version_range"}:
-                      continue
-                  raise SystemExit(f"Required property not found: {key}")
-          props.write_text(s)
-
-          build = root / "build_fabric.gradle"
-          s = build.read_text()
-          s, count = re.subn(
-              r"id 'fabric-loom' version '[^']+'",
-              "id 'fabric-loom' version '1.17.21'",
-              s,
-              count=1,
-          )
-          if count != 1:
-              raise SystemExit("Could not update Fabric Loom plugin version")
-
-          s, count = re.subn(
-              r"mappings loom\.layered\(\)\s*\{\s*officialMojangMappings\(\)\s*parchment\([^\n]*\)\s*\}",
-              "mappings loom.layered() {\n        officialMojangMappings()\n    }",
-              s,
-              count=1,
-          )
-          if count != 1:
-              raise SystemExit("Could not remove old-version Parchment mappings block")
-
-          # The pinned ForgeConfigAPIPort artifact was for an old MC version and is not used by WATUT source.
-          s = re.sub(r"(?m)^\s*include\(modImplementation\(\"curse\.maven:forge-config-api-port-fabric-547434:[^\"]+\"\)\)\s*\n", "", s)
-          build.write_text(s)
-
-          meta = root / "src/main/resources/fabric.mod.json"
-          data = json.loads(meta.read_text())
-          deps = data.setdefault("depends", {})
-          deps.update({
-              "fabricloader": ">=0.19.5",
-              "coroutil": ">=26.3-1.3.8",
-              "fabric-api": "*",
-              "minecraft": "~26.3",
-              "java": ">=25",
-          })
-          meta.write_text(json.dumps(data, indent=2) + "\n")
-
-          print("Patched WATUT build target to Minecraft 26.3 / Fabric.")
-          print("gradle.properties target lines:")
-          for line in props.read_text().splitlines():
-              if any(line.strip().startswith(k + "=") for k in replacements):
-                  print(line)
-          PY
-
-      - name: Select Fabric build script
-        shell: bash
-        run: cp watut/build_fabric.gradle watut/build.gradle
-
-      - name: Install Gradle 9.7.1
+      - name: Get CoroUtil dependency and Jonahnm WATUT source
         shell: bash
         run: |
           set -euo pipefail
-          curl --fail --location --retry 3 --retry-delay 2 https://services.gradle.org/distributions/gradle-9.7.1-bin.zip -o /tmp/gradle.zip
-          unzip -q /tmp/gradle.zip -d "$HOME"
-          echo "$HOME/gradle-9.7.1/bin" >> "$GITHUB_PATH"
+          git clone --depth 1 --branch 1.21.0 https://github.com/Corosauce/CoroUtil.git CoroUtil
+          git clone --depth 1 --branch 26.2 https://github.com/jonahnm/WATUT.git WATUT
+          curl --fail --location --retry 3 --retry-delay 2 \
+            https://raw.githubusercontent.com/efxd29/Mod-Compile/watut-full-26.3/port-watut-26.3/patch.py \
+            -o /tmp/patch-watut-26.3.py
 
-      - name: Compile Fabric JAR
+      - name: Apply Minecraft 26.3 compatibility patches to Jonahnm source
         shell: bash
-        working-directory: watut
         run: |
+          set -euo pipefail
+          python3 -m py_compile /tmp/patch-watut-26.3.py
+          python3 /tmp/patch-watut-26.3.py CoroUtil coroutil
+          python3 /tmp/patch-watut-26.3.py WATUT watut
+          sed -i 's/^mod_version=26.3-1.2.7-port.1$/mod_version=26.3-1.2.8-jonah.1/' WATUT/gradle.properties
+          cp CoroUtil/build_fabric.gradle CoroUtil/build.gradle
+          cp WATUT/build_fabric.gradle WATUT/build.gradle
+          echo "Source: jonahnm/WATUT branch 26.2"
+          grep -E '^(minecraft_version|loader_version|fabric_version|mod_version|coroutil_version)=' WATUT/gradle.properties
+
+      - name: Build CoroUtil for 26.3
+        id: coroutil
+        shell: bash
+        run: |
+          set -uo pipefail
+          cd CoroUtil
           set +e
-          gradle build --no-daemon --console=plain --stacktrace > "$GITHUB_WORKSPACE/out-build.log" 2>&1
-          rc=$?
-          set -e
-          cat "$GITHUB_WORKSPACE/out-build.log"
-          mkdir -p out
-          cp "$GITHUB_WORKSPACE/out-build.log" out/build.log
-          if [ "$rc" -ne 0 ]; then
-            exit "$rc"
-          fi
+          gradle --no-daemon --console=plain --stacktrace clean build 2>&1 | tee ../coroutil-build.log
+          rc=${PIPESTATUS[0]}
+          echo "COROUTIL_RC=$rc" >> "$GITHUB_ENV"
+          exit "$rc"
 
-      - name: Verify compiled JAR and target metadata
+      - name: Install CoroUtil into temporary Maven Local
         shell: bash
         run: |
           set -euo pipefail
-          JAR="$(find watut/build/libs -maxdepth 1 -type f -name '*.jar' ! -name '*sources*' ! -name '*dev*' ! -name '*javadoc*' -size +0c | head -n 1)"
+          artifact="CoroUtil/build/libs/coroutil-fabric-26.3-1.3.8.jar"
+          test -s "$artifact"
+          dest="$HOME/.m2/repository/com/corosus/coroutil/coroutil-fabric/26.3-1.3.8"
+          mkdir -p "$dest"
+          cp "$artifact" "$dest/coroutil-fabric-26.3-1.3.8.jar"
+          cat > "$dest/coroutil-fabric-26.3-1.3.8.pom" <<'POM'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <project xmlns="http://maven.apache.org/POM/4.0.0">
+            <modelVersion>4.0.0</modelVersion>
+            <groupId>com.corosus.coroutil</groupId>
+            <artifactId>coroutil-fabric</artifactId>
+            <version>26.3-1.3.8</version>
+            <packaging>jar</packaging>
+          </project>
+          POM
+
+      - name: Compile Jonahnm WATUT against 26.3
+        id: watut
+        shell: bash
+        run: |
+          set -uo pipefail
+          cd WATUT
+          set +e
+          gradle --no-daemon --console=plain --stacktrace clean build 2>&1 | tee ../watut-build.log
+          rc=${PIPESTATUS[0]}
+          echo "WATUT_RC=$rc" >> "$GITHUB_ENV"
+          exit "$rc"
+
+      - name: Verify mod JAR and target metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          JAR="$(find WATUT/build/libs -maxdepth 1 -type f -name '*.jar' ! -name '*sources*' ! -name '*dev*' ! -name '*javadoc*' -size +0c | head -n 1)"
           test -n "$JAR"
-          cp "$JAR" out/WATUT-26.3-Fabric.jar
-          unzip -t out/WATUT-26.3-Fabric.jar
-          unzip -p out/WATUT-26.3-Fabric.jar fabric.mod.json > out/fabric.mod.json
+          mkdir -p out
+          cp "$JAR" out/WATUT-26.3-Fabric-Jonahnm.jar
+          unzip -t out/WATUT-26.3-Fabric-Jonahnm.jar
+          unzip -p out/WATUT-26.3-Fabric-Jonahnm.jar fabric.mod.json > out/fabric.mod.json
           grep -q '"minecraft": "~26.3"' out/fabric.mod.json
           grep -q '"fabricloader": ">=0.19.5"' out/fabric.mod.json
-          echo "Artifact validated: WATUT-26.3-Fabric.jar"
+          cp WATUT/build.gradle out/build.gradle
+          cp WATUT/gradle.properties out/gradle.properties
+          cp watut-build.log out/build.log
+          echo "Compiled from jonahnm/WATUT branch 26.2; target metadata set to Minecraft 26.3." > out/BUILD-STATUS.txt
+          unzip -l out/WATUT-26.3-Fabric-Jonahnm.jar >> out/BUILD-STATUS.txt
 
-      - name: Upload build output and diagnostics
+      - name: Upload JAR and build diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: WATUT-26.3-Fabric
-          path: out/
+          name: WATUT-26.3-Fabric-Jonahnm
+          path: |
+            out/
+            coroutil-build.log
+            watut-build.log
           if-no-files-found: warn
-          retention-days: 7
+          retention-days: 30
