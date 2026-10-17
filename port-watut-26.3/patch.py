@@ -393,6 +393,398 @@ if kind == "watut":
         if text != old:
             source.write_text(text, encoding="utf-8")
 
+# Minecraft 26.3 compatibility pass for the original WATUT client.
+if kind == "coroutil":
+    aw_path = root / "src/main/resources/coroutil.accesswidener"
+    if aw_path.exists():
+        aw = "\n".join(line for line in aw_path.read_text(encoding="utf-8").splitlines()
+                       if "Biome getTemperature (Lnet/minecraft/core/BlockPos;)F" not in line) + "\n"
+        aw_path.write_text(aw, encoding="utf-8")
+
+if kind == "watut":
+    java_root = root / "src/main/java/com/corosus/watut"
+
+    # 26.3 moved screens off Minecraft and onto Gui; clean up the earlier name pass.
+    for source in java_root.rglob("*.java"):
+        text = source.read_text(encoding="utf-8")
+        text = text.replace("Minecraft.getInstance().screen()", "Minecraft.getInstance().gui.screen")
+        text = text.replace("mc.screen()", "mc.gui.screen")
+        text = text.replace("minecraft.screen()", "minecraft.gui.screen")
+        text = text.replace("Minecraft.getInstance().cameraEntity", "Minecraft.getInstance().getCameraEntity()")
+        text = text.replace("pPlayerInfo.getProfile().getId()", "pPlayerInfo.getProfile().id()")
+        text = text.replace("nbt.getString(WatutNetworking.NBTDataPlayerUUID)", "nbt.getString(WatutNetworking.NBTDataPlayerUUID).orElse(\"\")")
+        text = text.replace("screen instanceof ReceivingLevelScreen", "false")
+        text = text.replace("newRender && playerStatus.getScreenData().getParticleRenderType() != null", "newRender && playerStatus.getScreenData().getParticleRenderType() != null")
+        source.write_text(text, encoding="utf-8")
+
+    # Remove a private particle manager from 1.21; in 26.3 vanilla owns particle lifetime/rendering.
+    pm = java_root / "PlayerStatusManagerClient.java"
+    text = pm.read_text(encoding="utf-8")
+    text = text.replace("import com.corosus.watut.client.CustomParticleEngine;\n", "")
+    text = text.replace("import net.minecraft.server.packs.resources.ReloadableResourceManager;\n", "")
+    text = text.replace("import net.minecraft.client.gui.GuiGraphicsExtractor;", "import net.minecraft.client.gui.GuiGraphicsExtractor;\nimport net.minecraft.client.particle.ParticleEngine;")
+    text = re.sub(r"(?m)^\s*public static ShaderInstanceBlur (?:positionTexBlur|positionTexBlurHorizontal|positionTexBlurVertical|particle);\s*\n", "", text)
+    text = re.sub(r"(?m)^\s*private static CustomParticleEngine customParticleEngine;\s*\n", "", text)
+    text = re.sub(r"(?s)    public static CustomParticleEngine getParticleEngine\(\) \{.*?\n    \}\n\n    public void tickGame", "    public static ParticleEngine getParticleEngine() {\n        return Minecraft.getInstance().particleEngine;\n    }\n\n    public void tickGame", text, count=1)
+    # Book editor field internals were removed; still report the correct "book is open" status.
+    text = re.sub(r"else if \(mc\.gui\.screen instanceof BookEditScreen bookEditScreen\) \{\s*chatText\s*=\s*bookEditScreen\.pageEdit\.getMessageFn\.get\(\);\s*\}",
+                  'else if (mc.gui.screen instanceof BookEditScreen) { chatText = ""; }', text)
+    # Tab overlay internals are render-state based now; do not break vanilla ping rendering.
+    text = re.sub(r"(?s)    public boolean renderPingIconHook\(PlayerTabOverlay playerTabOverlay, GuiGraphicsExtractor pGuiGraphics, int p_281809_, int p_282801_, int pY, PlayerInfo pPlayerInfo\) \{.*?\n    \}\n\n    public void setupRotationsHook",
+                  "    public boolean renderPingIconHook(PlayerTabOverlay playerTabOverlay, GuiGraphicsExtractor pGuiGraphics, int p_281809_, int p_282801_, int pY, PlayerInfo pPlayerInfo) {\n        return false;\n    }\n\n    public void setupRotationsHook", text, count=1)
+    # Dynamic screen rendering used removed immediate-mode GL/shader APIs; keep status/chat/pose logic and packet decoding intact.
+    pm.write_text(text, encoding="utf-8")
+
+    # Move the world particles to 26.3's extract-based single-quad renderer.
+    particle_base = r'''package com.corosus.watut.particle;
+
+import net.minecraft.client.Camera;
+import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.client.particle.SingleQuadParticle;
+import net.minecraft.client.renderer.state.level.QuadParticleRenderState;
+import net.minecraft.util.Mth;
+import org.joml.Quaternionf;
+import com.mojang.math.Axis;
+
+public abstract class ParticleRotating extends SingleQuadParticle {
+    public boolean useCustomRotation = true;
+    public float prevRotationYaw, rotationYaw;
+    public float prevRotationPitch, rotationPitch;
+    public float prevRotationRoll, rotationRoll;
+    public float brightness = 1F;
+    public int despawnCountdown = Integer.MAX_VALUE;
+
+    public ParticleRotating(ClientLevel level, double x, double y, double z) {
+        super(level, x, y, z, null);
+    }
+
+    @Override
+    public void tick() {
+        super.tick();
+        if (this.despawnCountdown != Integer.MAX_VALUE && --this.despawnCountdown <= 0) this.remove();
+    }
+
+    public float getColorRed() { return this.rCol; }
+    public float getColorGreen() { return this.gCol; }
+    public float getColorBlue() { return this.bCol; }
+    public void keepAlive() { this.despawnCountdown = 40; }
+    public void setQuadSize(float size) { this.quadSize = size; }
+    @Override public void setAlpha(float value) { super.setAlpha(value); }
+    public void setPosPrev(double x, double y, double z) { this.xo = x; this.yo = y; this.zo = z; }
+    public float getBrightness() { return this.brightness; }
+    public void setBrightness(float value) { this.brightness = value; }
+
+    @Override
+    protected SingleQuadParticle.Layer getLayer() {
+        return SingleQuadParticle.Layer.TRANSLUCENT;
+    }
+
+    @Override
+    public void extract(QuadParticleRenderState state, Camera camera, float partialTick) {
+        Quaternionf rotation;
+        if (this.useCustomRotation) {
+            rotation = new Quaternionf();
+            rotation.mul(Axis.YP.rotationDegrees(Mth.lerp(partialTick, this.prevRotationYaw, this.rotationYaw)));
+            rotation.mul(Axis.XP.rotationDegrees(Mth.lerp(partialTick, this.prevRotationPitch, this.rotationPitch)));
+            rotation.mul(Axis.ZP.rotationDegrees(Mth.lerp(partialTick, this.prevRotationRoll, this.rotationRoll)));
+        } else {
+            rotation = new Quaternionf(camera.rotation());
+            if (this.roll != 0.0F) rotation.rotateZ(Mth.lerp(partialTick, this.oRoll, this.roll));
+        }
+        this.extractRotatedQuad(state, camera, rotation, partialTick);
+    }
+}
+'''
+    (java_root / "particle/ParticleRotating.java").write_text(particle_base, encoding="utf-8")
+
+    dynamic = r'''package com.corosus.watut.particle;
+
+import com.corosus.watut.ParticleRegistry;
+import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.client.particle.SingleQuadParticle;
+
+public class ParticleDynamic extends ParticleRotating {
+    public SingleQuadParticle.Layer particleRenderType;
+
+    @Override
+    protected SingleQuadParticle.Layer getLayer() {
+        return particleRenderType == null ? SingleQuadParticle.Layer.TRANSLUCENT : particleRenderType;
+    }
+
+    public ParticleDynamic(ClientLevel level, double x, double y, double z, SingleQuadParticle.Layer renderType) {
+        this(level, x, y, z, renderType, 1F);
+    }
+
+    public ParticleDynamic(ClientLevel level, double x, double y, double z, SingleQuadParticle.Layer renderType, float brightness) {
+        super(level, x, y, z);
+        this.particleRenderType = renderType;
+        this.setSprite(ParticleRegistry.inventory.getSprite());
+        this.lifetime = Integer.MAX_VALUE;
+        this.gravity = 0;
+        this.quadSize = 0.5F;
+        this.xd = this.yd = this.zd = 0;
+        this.setColor(this.rCol * brightness, this.gCol * brightness, this.bCol * brightness);
+    }
+
+    @Override
+    public void tick() {
+        super.tick();
+        this.xo = this.x;
+        this.yo = this.y;
+        this.zo = this.z;
+        if (this.age++ >= this.lifetime) this.remove();
+        else this.move(this.xd, this.yd, this.zd);
+    }
+}
+'''
+    (java_root / "particle/ParticleDynamic.java").write_text(dynamic, encoding="utf-8")
+
+    item = r'''package com.corosus.watut.particle;
+
+import com.corosus.watut.ParticleRegistry;
+import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.client.renderer.RenderBuffers;
+import net.minecraft.client.renderer.entity.EntityRenderDispatcher;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.client.particle.SingleQuadParticle;
+
+import java.util.HashSet;
+
+public class ParticleItem extends ParticleRotating {
+    public static HashSet<String> itemBlacklist = new HashSet<>();
+    public ItemStack itemStack;
+    public float xFrom, yFrom, zFrom, xTo, yTo, zTo;
+
+    public ParticleItem(ClientLevel level, float brightness, ItemStack stack, RenderBuffers buffers,
+                        EntityRenderDispatcher dispatcher, float xFrom, float yFrom, float zFrom,
+                        float xTo, float yTo, float zTo) {
+        super(level, xFrom, yFrom, zFrom);
+        this.itemStack = stack;
+        this.xFrom = xFrom; this.yFrom = yFrom; this.zFrom = zFrom;
+        this.xTo = xTo; this.yTo = yTo; this.zTo = zTo;
+        this.setSprite(ParticleRegistry.anvil.getSprite());
+        this.lifetime = 6;
+        this.gravity = 0;
+        this.quadSize = 0.18F;
+        this.rotationYaw = level.getRandom().nextFloat() * 360F;
+        this.setColor(this.rCol * brightness, this.gCol * brightness, this.bCol * brightness);
+    }
+
+    @Override
+    protected SingleQuadParticle.Layer getLayer() {
+        return SingleQuadParticle.Layer.TRANSLUCENT;
+    }
+
+    @Override
+    public void tick() {
+        super.tick();
+        this.xo = this.x; this.yo = this.y; this.zo = this.z;
+        float lerp = ((float)this.age) / 3.0F;
+        this.setPos(net.minecraft.util.Mth.lerp(lerp, xFrom, xTo),
+                    net.minecraft.util.Mth.lerp(lerp, yFrom, yTo),
+                    net.minecraft.util.Mth.lerp(lerp, zFrom, zTo));
+        if (this.age >= 3) this.setPos(xTo, yTo, zTo);
+        if (this.age >= this.lifetime) this.remove();
+    }
+}
+'''
+    (java_root / "particle/ParticleItem.java").write_text(item, encoding="utf-8")
+
+    # Keep data/network state for GUI captures but avoid obsolete fixed-function rendering and shader classes.
+    screen_data = r'''package com.corosus.watut.client.screen;
+
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.particle.SingleQuadParticle;
+import org.lwjgl.system.MemoryUtil;
+
+import java.nio.ByteBuffer;
+import java.util.concurrent.atomic.AtomicBoolean;
+
+public class ScreenData {
+    private volatile ByteBuffer texturePixelData, decompressionBuffer;
+    private final AtomicBoolean isBufferReady = new AtomicBoolean(false);
+    private byte[] texturePixelDataPartial;
+    private long gameTicksSinceFirstPacket, gameTicksSinceLastScreenSend, gameTicksSinceLastScreenReceiveAndRender;
+    private int lastIndexReceived, width = ScreenParticleRenderer.defaultWidthScaledDown, height = ScreenParticleRenderer.defaultHeightScaledDown;
+    private SingleQuadParticle.Layer particleRenderType;
+    private boolean needsNewRenderFromPixelData, needsNewRenderToPixelData;
+    private Screen lastScreen;
+
+    public void initClient() { this.particleRenderType = null; }
+    public ByteBuffer getTexturePixelData() { return texturePixelData; }
+    public void freeTexturePixelData() { if (texturePixelData != null) MemoryUtil.memFree(texturePixelData); }
+    public void setTexturePixelData(ByteBuffer value) { texturePixelData = value; }
+    public SingleQuadParticle.Layer getParticleRenderType() { return particleRenderType; }
+    public void setParticleRenderType(SingleQuadParticle.Layer value) { particleRenderType = value; }
+    public synchronized boolean needsNewRenderFromPixelData() { return needsNewRenderFromPixelData; }
+    public synchronized void markNeedsNewRenderFromPixelData(boolean value) { needsNewRenderFromPixelData = value; }
+    public boolean isNeedsNewRenderToPixelData() { return needsNewRenderToPixelData; }
+    public void setNeedsNewRenderToPixelData(boolean value) { needsNewRenderToPixelData = value; }
+    public byte[] getTexturePixelDataPartial() { return texturePixelDataPartial; }
+    public void setTexturePixelDataPartial(byte[] value) { texturePixelDataPartial = value; }
+    public long getGameTicksSinceFirstPacket() { return gameTicksSinceFirstPacket; }
+    public void setGameTicksSinceFirstPacket(long value) { gameTicksSinceFirstPacket = value; }
+    public int getLastIndexReceived() { return lastIndexReceived; }
+    public void setLastIndexReceived(int value) { lastIndexReceived = value; }
+    public long getGameTicksSinceLastScreenSend() { return gameTicksSinceLastScreenSend; }
+    public void setGameTicksSinceLastScreenSend(long value) { gameTicksSinceLastScreenSend = value; }
+    public long getGameTicksSinceLastScreenReceiveAndRender() { return gameTicksSinceLastScreenReceiveAndRender; }
+    public void setGameTicksSinceLastScreenReceiveAndRender(long value) { gameTicksSinceLastScreenReceiveAndRender = value; }
+    public AtomicBoolean getIsBufferReady() { return isBufferReady; }
+    public ByteBuffer getDecompressionBuffer() { return decompressionBuffer; }
+    public void setDecompressionBuffer(ByteBuffer value) { decompressionBuffer = value; }
+    public int getWidth() { return width; }
+    public void setWidth(int value) { width = value; }
+    public int getHeight() { return height; }
+    public void setHeight(int value) { height = value; }
+    public Screen getLastScreen() { return lastScreen; }
+    public void setLastScreen(Screen value) { lastScreen = value; }
+}
+'''
+    (java_root / "client/screen/ScreenData.java").write_text(screen_data, encoding="utf-8")
+
+    screen_particle = r'''package com.corosus.watut.client.screen;
+
+import net.minecraft.client.Minecraft;
+
+public class ScreenParticleRenderer {
+    public static boolean isRenderingParticleGUI = false;
+    public static boolean isRenderingParticleGUI2 = false;
+    public static final int defaultWidthScaledDown = 256;
+    public static final int defaultHeightScaledDown = 256;
+    public static final int bytesPerPixel = 4;
+    public int width, height, widthScaledDown = defaultWidthScaledDown, heightScaledDown = defaultHeightScaledDown;
+    public boolean needsInit = true;
+    private static ScreenParticleRenderer instance;
+    public static ScreenParticleRenderer getInstance() {
+        if (instance == null) instance = new ScreenParticleRenderer();
+        return instance;
+    }
+    public void checkSetup() {
+        if (!needsInit) return;
+        needsInit = false;
+        width = Minecraft.getInstance().getWindow().getWidth();
+        height = Minecraft.getInstance().getWindow().getHeight();
+    }
+    public void setup() { checkSetup(); }
+    public synchronized void resize(int width, int height) {
+        this.width = width; this.height = height; needsInit = false;
+        resizeScaledDown(width, height);
+    }
+    public void resizeScaledDown(int width, int height) {
+        this.widthScaledDown = defaultWidthScaledDown;
+        this.heightScaledDown = defaultHeightScaledDown;
+    }
+}
+'''
+    (java_root / "client/screen/ScreenParticleRenderer.java").write_text(screen_particle, encoding="utf-8")
+
+    helper = r'''package com.corosus.watut.client.screen;
+
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.resources.Identifier;
+
+import java.nio.ByteBuffer;
+import java.util.zip.Deflater;
+import java.util.zip.Inflater;
+
+public class RenderHelper {
+    public static boolean performingOwnRender = false;
+    public static int xaeroWorldMapTextureID = -1;
+    public static final Identifier cursor = Identifier.fromNamespaceAndPath("watut", "textures/misc/mouse.png");
+    public static boolean useDynamicGUISystem() { return false; }
+    public static boolean isShadersEnabled() { return false; }
+    public static void guiRender(GuiGraphicsExtractor graphics) { }
+    public static void renderWithTooltipEnd(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) { }
+
+    public static ByteBuffer compress(ByteBuffer input) {
+        byte[] bytes = new byte[input.remaining()];
+        input.get(bytes);
+        Deflater deflater = new Deflater(Deflater.BEST_COMPRESSION);
+        deflater.setInput(bytes); deflater.finish();
+        ByteBuffer out = ByteBuffer.allocateDirect(bytes.length + 512);
+        byte[] chunk = new byte[1024];
+        while (!deflater.finished()) {
+            int n = deflater.deflate(chunk);
+            if (out.remaining() < n) {
+                ByteBuffer bigger = ByteBuffer.allocateDirect(Math.max(out.capacity() * 2, out.position() + n));
+                out.flip(); bigger.put(out); out = bigger;
+            }
+            out.put(chunk, 0, n);
+        }
+        deflater.end(); out.flip(); input.flip(); return out;
+    }
+
+    public static ByteBuffer decompress(ScreenData screenData, ByteBuffer compressed, int expectedSize) throws Exception {
+        if (expectedSize < 0 || expectedSize > 16 * 1024 * 1024) throw new IllegalArgumentException("Invalid GUI image size");
+        byte[] bytes = new byte[compressed.remaining()]; compressed.get(bytes);
+        Inflater inflater = new Inflater(); inflater.setInput(bytes);
+        ByteBuffer out = ByteBuffer.allocateDirect(expectedSize);
+        byte[] chunk = new byte[8192];
+        try {
+            while (!inflater.finished()) {
+                int n = inflater.inflate(chunk);
+                if (n > 0) {
+                    if (out.remaining() < n) throw new IllegalArgumentException("GUI image exceeds declared size");
+                    out.put(chunk, 0, n);
+                } else if (inflater.needsInput() || inflater.needsDictionary()) {
+                    throw new IllegalArgumentException("Incomplete GUI image packet");
+                }
+            }
+        } finally { inflater.end(); }
+        out.flip(); screenData.setDecompressionBuffer(out); return out;
+    }
+}
+'''
+    (java_root / "client/screen/RenderHelper.java").write_text(helper, encoding="utf-8")
+
+    # Item particles retain movement but render with WATUT's atlas icon; 26.3 no longer exposes legacy BakedModel quads.
+    # Stop compiling obsolete GL renderer/mixin classes; status, typing, arm animation and normal icon particles remain active.
+    for rel in [
+        "ShaderInstanceBlur.java",
+        "client/CustomParticleEngine.java",
+        "mixin/client/GameRendererReloadShaders.java",
+        "mixin/client/ParticleEngineMixin.java",
+        "mixin/client/ParticleEngineMixinFabric.java",
+        "mixin/client/RenderPingIconInject.java",
+        "mixin/client/ScreenRenderWithTooltip.java",
+        "mixin/client/ScreenRenderBackground.java",
+        "mixin/client/PostChainResize.java",
+        "mixin/client/NativeImageAccessor.java",
+    ]:
+        p = java_root / rel
+        if p.exists(): p.unlink()
+
+    # Keep the normal tick hook but remove calls to the deleted custom engine.
+    tick = java_root / "mixin/client/MinecraftTick.java"
+    if tick.exists():
+        t = tick.read_text(encoding="utf-8")
+        t = re.sub(r"(?s)\n\s*@Inject\(method = \"updateLevelInEngines\".*?\n\s*\}\n", "\n", t)
+        t = t.replace("import net.minecraft.client.multiplayer.ClientLevel;\n", "")
+        tick.write_text(t, encoding="utf-8")
+
+    # Modern vanilla interaction result type.
+    p = java_root / "mixin/BlockBehaviorUse.java"
+    if p.exists():
+        t = p.read_text(encoding="utf-8").replace("ItemInteractionResult", "InteractionResult")
+        t = t.replace("import net.minecraft.world.InteractionResult;\nimport net.minecraft.world.InteractionResult;", "import net.minecraft.world.InteractionResult;")
+        p.write_text(t, encoding="utf-8")
+
+    # Delete obsolete render integrations from Fabric and shared mixin lists.
+    for p in (root / "src/main/resources").glob("*mixins*.json"):
+        try:
+            meta = json.loads(p.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        for key in ("client", "mixins", "server"):
+            if isinstance(meta.get(key), list):
+                meta[key] = [name for name in meta[key] if name not in {
+                    "client.RenderPingIconInject", "client.ScreenRenderWithTooltip", "client.ScreenRenderBackground",
+                    "client.PostChainResize", "client.GameRendererReloadShaders", "client.ParticleEngineMixin",
+                    "client.ParticleEngineMixinFabric", "client.NativeImageAccessor"
+                }]
+        p.write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
+
 # Correct current loader metadata; retain upstream entrypoints/mixins/access wideners.
 meta_path = root / "src/main/resources/fabric.mod.json"
 if meta_path.exists():
