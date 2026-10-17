@@ -1312,3 +1312,19 @@ public abstract class GameRendererCapture26 {
         if "client.GameRendererCapture26" not in client_mixins:
             client_mixins.append("client.GameRendererCapture26")
         mixin_config.write_text(json.dumps(mixin_meta, indent=2) + "\n", encoding="utf-8")
+
+
+# Keep the original config/status references available in the new preview-upload path.
+if kind == "watut":
+    rh = root / "src/main/java/com/corosus/watut/client/screen/RenderHelper.java"
+    text = rh.read_text(encoding="utf-8")
+    imports = [
+        "import com.corosus.watut.PlayerStatus;",
+        "import com.corosus.watut.WatutMod;",
+        "import com.corosus.watut.config.ConfigClient;",
+        "import com.corosus.watut.config.ConfigServerControlledSyncedToClient;",
+    ]
+    anchor = "import net.minecraft.client.gui.GuiGraphicsExtractor;"
+    if anchor in text:
+        text = text.replace(anchor, anchor + "\n" + "\n".join(line for line in imports if line not in text), 1)
+    rh.write_text(text, encoding="utf-8")
