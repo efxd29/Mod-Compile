@@ -916,3 +916,17 @@ if kind == "watut":
         text = re.sub(r'\.getStringOr\(\s*,\s*""\)', '.getString()', text)
         if text != source.read_text(encoding="utf-8"):
             source.write_text(text, encoding="utf-8")
+
+
+# Drop only access widener entries for private members removed from Minecraft 26.3.
+if kind == "watut":
+    aw_path = root / "src/main/resources/watut.accesswidener"
+    if aw_path.exists():
+        obsolete = (
+            "net/minecraft/client/particle/ParticleEngine textureAtlas ",
+            "net/minecraft/client/gui/components/PlayerTabOverlay renderPingIcon ",
+            "net/minecraft/client/gui/screens/inventory/BookEditScreen pageEdit ",
+            "net/minecraft/client/particle/ParticleEngine RENDER_ORDER ",
+        )
+        lines = aw_path.read_text(encoding="utf-8").splitlines()
+        aw_path.write_text("\n".join(line for line in lines if not any(key in line for key in obsolete)) + "\n", encoding="utf-8")
