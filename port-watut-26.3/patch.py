@@ -1378,3 +1378,371 @@ if kind == "watut":
     if anchor in text and "private static SingleQuadParticle.Layer makeLayer" not in text:
         text = text.replace(anchor, helper + anchor, 1)
     sd.write_text(text, encoding="utf-8")
+
+
+# Render the extracted Screen state into a private render target. This preserves WATUT's
+# "open screen preview" behavior instead of copying the surrounding 3D world framebuffer.
+if kind == "watut":
+    java_root = root / "src/main/java/com/corosus/watut"
+
+    capture = r'''package com.corosus.watut.client.screen;
+
+import com.corosus.watut.PlayerStatus;
+import com.corosus.watut.WatutMod;
+import com.corosus.watut.config.ConfigServerControlledSyncedToClient;
+import com.mojang.blaze3d.pipeline.RenderTarget;
+import com.mojang.blaze3d.platform.NativeImage;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.Screenshot;
+import net.minecraft.client.DeltaTracker;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.renderer.GameRenderer;
+import net.minecraft.client.renderer.state.gui.GuiRenderState;
+import net.minecraft.resources.Identifier;
+import net.minecraft.util.ARGB;
+
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
+import java.nio.ByteBuffer;
+import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
+
+public final class ScreenCapture26 {
+    private static final AtomicBoolean capturePending = new AtomicBoolean(false);
+    private static volatile boolean renderingCapture;
+    private static GuiRenderState captureState;
+    private static Object captureGuiRenderer;
+    private static RenderTarget captureTarget;
+    private static int targetWidth, targetHeight;
+
+    private ScreenCapture26() {}
+    public static boolean isRenderingCapture() { return renderingCapture; }
+    public static RenderTarget getCaptureTarget() { return captureTarget; }
+
+    public static void captureIfNeeded(GameRenderer gameRenderer, DeltaTracker deltaTracker) {
+        Minecraft mc = Minecraft.getInstance();
+        Screen screen = mc.gui == null ? null : mc.gui.screen();
+        if (mc.level == null || mc.player == null || screen == null || !RenderHelper.useDynamicGUISystem()) return;
+        PlayerStatus status = WatutMod.getPlayerStatusManagerClient().getStatusLocal();
+        ScreenData data = status.getScreenData();
+        if (!data.isNeedsNewRenderToPixelData() || !capturePending.compareAndSet(false, true)) return;
+
+        data.setNeedsNewRenderToPixelData(false);
+        try {
+            ensureCaptureTarget(mc);
+            ensureCaptureRenderer(gameRenderer, mc);
+            resetState(captureState);
+
+            int mouseX = (int)(mc.mouseHandler.xpos() / mc.getWindow().getGuiScale());
+            int mouseY = (int)(mc.mouseHandler.ypos() / mc.getWindow().getGuiScale());
+            float partialTick = deltaTracker.getGameTimeDeltaTicks();
+            GuiGraphicsExtractor graphics = new GuiGraphicsExtractor(mc, captureState, mouseX, mouseY);
+
+            renderingCapture = true;
+            extractScreen(screen, graphics, mouseX, mouseY, partialTick);
+            invokeByName(graphics, "extractDeferredElements", mouseX, mouseY, partialTick);
+            drawCursor(graphics, mouseX, mouseY);
+
+            invokeByName(captureTarget, "setClearColor", 0.0F, 0.0F, 0.0F, 0.0F);
+            invokeByName(captureTarget, "clear", Minecraft.ON_OSX);
+            invokeByName(captureGuiRenderer, "render");
+            invokeByName(captureGuiRenderer, "endFrame");
+            renderingCapture = false;
+
+            boolean entireScreen = ConfigServerControlledSyncedToClient.dynamicGuiShowClientsEntireScreen;
+            int scale = entireScreen ? 1 : Math.max(1, (int)Math.round(mc.getWindow().getGuiScale()));
+            Screenshot.takeScreenshot(captureTarget, scale, image -> finishCapture(status, image, entireScreen));
+        } catch (Throwable error) {
+            renderingCapture = false;
+            data.setNeedsNewRenderToPixelData(true);
+            capturePending.set(false);
+            System.err.println("[WATUT] Isolated screen capture failed: " + error);
+        }
+    }
+
+    private static void ensureCaptureTarget(Minecraft mc) throws Exception {
+        int w = Math.max(1, mc.getWindow().getWidth());
+        int h = Math.max(1, mc.getWindow().getHeight());
+        if (captureTarget == null) {
+            Class<?> type = Class.forName("com.mojang.blaze3d.pipeline.TextureTarget");
+            for (Constructor<?> constructor : type.getDeclaredConstructors()) {
+                Class<?>[] p = constructor.getParameterTypes();
+                if (p.length != 5 || p[0] != String.class || p[1] != int.class || p[2] != int.class) continue;
+                Object colorFormat = findRgbaFormat(p[3]);
+                constructor.setAccessible(true);
+                captureTarget = (RenderTarget)constructor.newInstance("watut-screen-preview", w, h, colorFormat, null);
+                targetWidth = w;
+                targetHeight = h;
+                return;
+            }
+            throw new NoSuchMethodException("TextureTarget(String,int,int,GpuFormat,GpuFormat)");
+        }
+        if (targetWidth != w || targetHeight != h) {
+            invokeByName(captureTarget, "resize", w, h);
+            targetWidth = w;
+            targetHeight = h;
+        }
+    }
+
+    private static Object findRgbaFormat(Class<?> formatType) {
+        try {
+            if (formatType.isEnum()) {
+                Object[] values = formatType.getEnumConstants();
+                for (Object value : values) {
+                    String name = ((Enum<?>)value).name();
+                    if (name.equals("RGBA8_UNORM") || name.equals("R8G8B8A8_UNORM") || name.equals("RGBA8")) return value;
+                }
+            }
+            for (Field field : formatType.getDeclaredFields()) {
+                if (!Modifier.isStatic(field.getModifiers())) continue;
+                if (!(field.getType().isAssignableFrom(formatType) || formatType.isAssignableFrom(field.getType()))) continue;
+                if (field.getName().equals("RGBA8_UNORM") || field.getName().equals("R8G8B8A8_UNORM") || field.getName().equals("RGBA8")) {
+                    field.setAccessible(true);
+                    return field.get(null);
+                }
+            }
+        } catch (Throwable ignored) {}
+        return null;
+    }
+
+    private static void ensureCaptureRenderer(GameRenderer gameRenderer, Minecraft mc) throws Exception {
+        if (captureState == null) captureState = new GuiRenderState();
+        if (captureGuiRenderer != null) return;
+
+        Object vanillaRenderer = null;
+        for (Field field : GameRenderer.class.getDeclaredFields()) {
+            if (Modifier.isStatic(field.getModifiers())) continue;
+            if (!field.getType().getName().endsWith(".GuiRenderer")) continue;
+            field.setAccessible(true);
+            vanillaRenderer = field.get(gameRenderer);
+            if (vanillaRenderer != null) break;
+        }
+        Object dispatcher = invokeByName(gameRenderer, "featureRenderDispatcher");
+        List<?> pictureInPicture = findPipRegistrations(vanillaRenderer);
+        Class<?> rendererClass = Class.forName("net.minecraft.client.gui.render.GuiRenderer");
+        for (Constructor<?> constructor : rendererClass.getDeclaredConstructors()) {
+            Class<?>[] p = constructor.getParameterTypes();
+            if (p.length != 3 || !p[0].isAssignableFrom(captureState.getClass())
+                    || !p[1].isInstance(dispatcher) || !List.class.isAssignableFrom(p[2])) continue;
+            constructor.setAccessible(true);
+            captureGuiRenderer = constructor.newInstance(captureState, dispatcher, pictureInPicture);
+            return;
+        }
+        throw new NoSuchMethodException("GuiRenderer(GuiRenderState,FeatureRenderDispatcher,List)");
+    }
+
+    private static List<?> findPipRegistrations(Object renderer) throws IllegalAccessException {
+        if (renderer != null) {
+            List<?> fallback = null;
+            for (Field field : renderer.getClass().getDeclaredFields()) {
+                if (Modifier.isStatic(field.getModifiers()) || !List.class.isAssignableFrom(field.getType())) continue;
+                field.setAccessible(true);
+                Object value = field.get(renderer);
+                if (!(value instanceof List<?> list)) continue;
+                if (field.getName().toLowerCase().contains("pip") || field.getName().toLowerCase().contains("picture")) return list;
+                if (!list.isEmpty() && fallback == null) fallback = list;
+                for (Object element : list) {
+                    if (element != null && element.getClass().getName().contains("PictureInPictureRendererRegistration")) return list;
+                }
+            }
+            if (fallback != null) return fallback;
+        }
+        return List.of();
+    }
+
+    private static void resetState(GuiRenderState state) throws Exception {
+        invokeByName(state, "reset");
+    }
+
+    private static void extractScreen(Screen screen, GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) throws Exception {
+        for (Method method : screen.getClass().getMethods()) {
+            if (!method.getName().equals("extractRenderStateWithTooltipAndSubtitles")) continue;
+            Class<?>[] p = method.getParameterTypes();
+            if (p.length == 4 && p[0].isAssignableFrom(graphics.getClass()) && p[1] == int.class && p[2] == int.class && p[3] == float.class) {
+                method.invoke(screen, graphics, mouseX, mouseY, partialTick);
+                return;
+            }
+        }
+        throw new NoSuchMethodException("Screen.extractRenderStateWithTooltipAndSubtitles");
+    }
+
+    private static void drawCursor(GuiGraphicsExtractor graphics, int mouseX, int mouseY) {
+        try {
+            Class<?> pipelines = Class.forName("net.minecraft.client.renderer.RenderPipelines");
+            Object pipeline = pipelines.getField("GUI_TEXTURED").get(null);
+            Identifier cursor = RenderHelper.cursor;
+            for (Method method : graphics.getClass().getMethods()) {
+                Class<?>[] p = method.getParameterTypes();
+                if (!method.getName().equals("blit") || p.length != 10 || !p[0].isInstance(pipeline) || p[1] != Identifier.class) continue;
+                method.invoke(graphics, pipeline, cursor, mouseX, mouseY, 0.0F, 0.0F, 6, 10, 16, 16);
+                return;
+            }
+        } catch (Throwable ignored) {}
+    }
+
+    private static Object invokeByName(Object instance, String name, Object... args) throws Exception {
+        if (instance == null) throw new IllegalStateException("Missing instance for " + name);
+        for (Method method : instance.getClass().getMethods()) {
+            if (!method.getName().equals(name) || method.getParameterCount() != args.length) continue;
+            Class<?>[] p = method.getParameterTypes();
+            boolean matches = true;
+            for (int i = 0; i < p.length; i++) {
+                if (args[i] == null) { if (p[i].isPrimitive()) matches = false; }
+                else if (p[i].isPrimitive()) {
+                    if ((p[i] == int.class && !(args[i] instanceof Integer))
+                            || (p[i] == float.class && !(args[i] instanceof Float))
+                            || (p[i] == boolean.class && !(args[i] instanceof Boolean))) matches = false;
+                } else if (!p[i].isInstance(args[i])) matches = false;
+            }
+            if (matches) return method.invoke(instance, args);
+        }
+        for (Method method : instance.getClass().getDeclaredMethods()) {
+            if (!method.getName().equals(name) || method.getParameterCount() != args.length) continue;
+            Class<?>[] p = method.getParameterTypes();
+            boolean matches = true;
+            for (int i = 0; i < p.length; i++) {
+                if (args[i] == null) { if (p[i].isPrimitive()) matches = false; }
+                else if (p[i].isPrimitive()) {
+                    if ((p[i] == int.class && !(args[i] instanceof Integer))
+                            || (p[i] == float.class && !(args[i] instanceof Float))
+                            || (p[i] == boolean.class && !(args[i] instanceof Boolean))) matches = false;
+                } else if (!p[i].isInstance(args[i])) matches = false;
+            }
+            if (matches) {
+                method.setAccessible(true);
+                return method.invoke(instance, args);
+            }
+        }
+        throw new NoSuchMethodException(instance.getClass().getName() + "." + name + "/" + args.length);
+    }
+
+    private static void finishCapture(PlayerStatus status, NativeImage image, boolean entireScreen) {
+        try {
+            if (image == null) {
+                status.getScreenData().setNeedsNewRenderToPixelData(true);
+                return;
+            }
+            int srcWidth = image.getWidth();
+            int srcHeight = image.getHeight();
+            if (srcWidth <= 0 || srcHeight <= 0 || (long)srcWidth * srcHeight * 4L > 64L * 1024L * 1024L) {
+                status.getScreenData().setNeedsNewRenderToPixelData(true);
+                return;
+            }
+            int outWidth = entireScreen ? srcWidth : ScreenParticleRenderer.defaultWidthScaledDown;
+            int outHeight = entireScreen ? srcHeight : ScreenParticleRenderer.defaultHeightScaledDown;
+            ByteBuffer rgba = ByteBuffer.allocateDirect(Math.multiplyExact(Math.multiplyExact(outWidth, outHeight), 4));
+            if (entireScreen) {
+                for (int y = 0; y < outHeight; y++) for (int x = 0; x < outWidth; x++) putPixel(rgba, image.getPixel(x, y));
+            } else {
+                int srcLeft = Math.max(0, (srcWidth - outWidth) / 2);
+                int srcTop = Math.max(0, (srcHeight - outHeight) / 2);
+                int dstLeft = Math.max(0, (outWidth - srcWidth) / 2);
+                int dstTop = Math.max(0, (outHeight - srcHeight) / 2);
+                int copyWidth = Math.min(outWidth - dstLeft, srcWidth - srcLeft);
+                int copyHeight = Math.min(outHeight - dstTop, srcHeight - srcTop);
+                for (int y = 0; y < outHeight; y++) {
+                    for (int x = 0; x < outWidth; x++) {
+                        int sx = srcLeft + x - dstLeft;
+                        int sy = srcTop + y - dstTop;
+                        if (x >= dstLeft && y >= dstTop && x < dstLeft + copyWidth && y < dstTop + copyHeight) putPixel(rgba, image.getPixel(sx, sy));
+                        else rgba.put((byte)0).put((byte)0).put((byte)0).put((byte)0);
+                    }
+                }
+            }
+            rgba.flip();
+            ScreenData data = status.getScreenData();
+            data.setWidth(outWidth);
+            data.setHeight(outHeight);
+            data.setTexturePixelData(RenderHelper.compress(rgba));
+            WatutMod.getPlayerStatusManagerClient().sendScreenRenderData(status);
+        } catch (Throwable error) {
+            status.getScreenData().setNeedsNewRenderToPixelData(true);
+            System.err.println("[WATUT] Could not encode isolated GUI preview: " + error);
+        } finally {
+            if (image != null) image.close();
+            capturePending.set(false);
+        }
+    }
+
+    private static void putPixel(ByteBuffer output, int color) {
+        output.put((byte)ARGB.red(color));
+        output.put((byte)ARGB.green(color));
+        output.put((byte)ARGB.blue(color));
+        output.put((byte)ARGB.alpha(color));
+    }
+}
+'''
+    (java_root / "client/screen/ScreenCapture26.java").write_text(capture, encoding="utf-8")
+
+    game_mixin = r'''package com.corosus.watut.mixin.client;
+
+import com.corosus.watut.client.screen.ScreenCapture26;
+import net.minecraft.client.DeltaTracker;
+import net.minecraft.client.renderer.GameRenderer;
+import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+
+@Mixin(GameRenderer.class)
+public abstract class GameRendererCapture26 {
+    @Inject(method = "render", at = @At("TAIL"))
+    private void watut$captureDynamicScreen(DeltaTracker deltaTracker, boolean renderLevel, CallbackInfo ci) {
+        ScreenCapture26.captureIfNeeded((GameRenderer)(Object)this, deltaTracker);
+    }
+}
+'''
+    (java_root / "mixin/client/GameRendererCapture26.java").write_text(game_mixin, encoding="utf-8")
+
+    target_mixin = r'''package com.corosus.watut.mixin.client;
+
+import com.corosus.watut.client.screen.ScreenCapture26;
+import com.mojang.blaze3d.pipeline.RenderTarget;
+import net.minecraft.client.gui.render.GuiRenderer;
+import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.ModifyVariable;
+
+@Mixin(GuiRenderer.class)
+public abstract class GuiRendererCaptureTarget {
+    @ModifyVariable(method = "executeDrawRange", at = @At("HEAD"), argsOnly = true, ordinal = 0)
+    private RenderTarget watut$redirectCaptureTarget(RenderTarget original) {
+        RenderTarget target = ScreenCapture26.getCaptureTarget();
+        return ScreenCapture26.isRenderingCapture() && target != null ? target : original;
+    }
+}
+'''
+    (java_root / "mixin/client/GuiRendererCaptureTarget.java").write_text(target_mixin, encoding="utf-8")
+
+    background_mixin = r'''package com.corosus.watut.mixin.client;
+
+import com.corosus.watut.client.screen.ScreenCapture26;
+import com.corosus.watut.config.ConfigServerControlledSyncedToClient;
+import net.minecraft.client.gui.screens.Screen;
+import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+
+@Mixin(Screen.class)
+public abstract class ScreenBackgroundCapture26 {
+    @Inject(method = {"extractBackground", "extractMenuBackground"}, at = @At("HEAD"), cancellable = true, require = 0)
+    private void watut$suppressCapturedBackground(CallbackInfo ci) {
+        if (ScreenCapture26.isRenderingCapture() && ConfigServerControlledSyncedToClient.dynamicGuiDisableBackgroundRendering) ci.cancel();
+    }
+}
+'''
+    (java_root / "mixin/client/ScreenBackgroundCapture26.java").write_text(background_mixin, encoding="utf-8")
+
+    # Replace the older direct-to-main-target screenshot capture mixin with an isolated renderer flow.
+    mixin_config = root / "src/main/resources/watut_fabric.mixins.json"
+    if mixin_config.exists():
+        meta = json.loads(mixin_config.read_text(encoding="utf-8"))
+        client_mixins = meta.setdefault("client", [])
+        for name in ("client.GameRendererCapture26", "client.GuiRendererCaptureTarget", "client.ScreenBackgroundCapture26", "client.GuiRender"):
+            if name not in client_mixins:
+                client_mixins.append(name)
+        mixin_config.write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
