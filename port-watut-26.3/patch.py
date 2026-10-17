@@ -53,6 +53,7 @@ group = project.maven_group
 repositories {
     mavenLocal()
     maven { url = "https://maven.fabricmc.net/" }
+    maven { url = "https://maven-central.storage-download.googleapis.com/maven2/" }
     mavenCentral()
 }
 
