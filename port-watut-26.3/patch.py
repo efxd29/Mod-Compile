@@ -2237,3 +2237,40 @@ if kind == "watut":
         1
     )
     sc_path.write_text(sc, encoding="utf-8")
+
+
+# Preserve full-screen GUI aspect ratio in the square particle plane used by Minecraft 26.3.
+if kind == "watut":
+    sc_path = root / "src/main/java/com/corosus/watut/client/screen/ScreenCapture26.java"
+    sc = sc_path.read_text(encoding="utf-8")
+    old = """            int outWidth = entireScreen ? srcWidth : ScreenParticleRenderer.defaultWidthScaledDown;
+            int outHeight = entireScreen ? srcHeight : ScreenParticleRenderer.defaultHeightScaledDown;
+            ByteBuffer rgba = ByteBuffer.allocateDirect(Math.multiplyExact(Math.multiplyExact(outWidth, outHeight), 4));
+            if (entireScreen) {
+                for (int y = 0; y < outHeight; y++) for (int x = 0; x < outWidth; x++) putPixel(rgba, image.getPixel(x, y));
+            } else {"""
+    new = """            int outWidth = entireScreen ? Math.min(4096, Math.max(srcWidth, srcHeight)) : ScreenParticleRenderer.defaultWidthScaledDown;
+            int outHeight = entireScreen ? outWidth : ScreenParticleRenderer.defaultHeightScaledDown;
+            ByteBuffer rgba = ByteBuffer.allocateDirect(Math.multiplyExact(Math.multiplyExact(outWidth, outHeight), 4));
+            if (entireScreen) {
+                double fit = Math.min((double)outWidth / srcWidth, (double)outHeight / srcHeight);
+                int scaledWidth = Math.max(1, (int)Math.round(srcWidth * fit));
+                int scaledHeight = Math.max(1, (int)Math.round(srcHeight * fit));
+                int dstLeft = (outWidth - scaledWidth) / 2;
+                int dstTop = (outHeight - scaledHeight) / 2;
+                for (int y = 0; y < outHeight; y++) {
+                    for (int x = 0; x < outWidth; x++) {
+                        if (x >= dstLeft && x < dstLeft + scaledWidth && y >= dstTop && y < dstTop + scaledHeight) {
+                            int sx = Math.min(srcWidth - 1, (int)((x - dstLeft) / fit));
+                            int sy = Math.min(srcHeight - 1, (int)((y - dstTop) / fit));
+                            putPixel(rgba, image.getPixel(sx, sy));
+                        } else {
+                            rgba.put((byte)0).put((byte)0).put((byte)0).put((byte)0);
+                        }
+                    }
+                }
+            } else {"""
+    if old not in sc:
+        raise SystemExit("Could not locate GUI screenshot output block; no replacement made")
+    sc = sc.replace(old, new, 1)
+    sc_path.write_text(sc, encoding="utf-8")
