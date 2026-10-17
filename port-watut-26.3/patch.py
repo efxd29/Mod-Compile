@@ -2274,3 +2274,13 @@ if kind == "watut":
         raise SystemExit("Could not locate GUI screenshot output block; no replacement made")
     sc = sc.replace(old, new, 1)
     sc_path.write_text(sc, encoding="utf-8")
+
+
+if kind == "watut":
+    dynamic_path = root / "src/main/java/com/corosus/watut/particle/ParticleDynamic.java"
+    dynamic = dynamic_path.read_text(encoding="utf-8")
+    dynamic = dynamic.replace(
+        "return super.getQuadSize(partialTick) * worldScale * ConfigClient.particleSizeScale;",
+        "return (float)(super.getQuadSize(partialTick) * worldScale * ConfigClient.particleSizeScale);"
+    )
+    dynamic_path.write_text(dynamic, encoding="utf-8")
