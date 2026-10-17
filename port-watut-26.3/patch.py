@@ -931,3 +931,384 @@ if kind == "watut":
         )
         lines = aw_path.read_text(encoding="utf-8").splitlines()
         aw_path.write_text("\n".join(line for line in lines if not any(key in line for key in obsolete)) + "\n", encoding="utf-8")
+
+
+# Restore live GUI preview in 26.3 using the native render-target screenshot/readback path.
+# The old implementation depended on immediate-mode GuiGraphics and removed GL shader hooks.
+if kind == "watut":
+    java_root = root / "src/main/java/com/corosus/watut"
+
+    screen_data = r'''package com.corosus.watut.client.screen;
+
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.particle.SingleQuadParticle;
+import net.minecraft.client.renderer.RenderPipelines;
+import net.minecraft.client.renderer.texture.DynamicTexture;
+import net.minecraft.resources.Identifier;
+
+import org.lwjgl.system.MemoryUtil;
+import java.nio.ByteBuffer;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
+
+public class ScreenData {
+    private static final AtomicLong NEXT_TEXTURE_ID = new AtomicLong();
+    private volatile ByteBuffer texturePixelData;
+    private volatile ByteBuffer decompressionBuffer;
+    private final AtomicBoolean isBufferReady = new AtomicBoolean(false);
+    private byte[] texturePixelDataPartial;
+    private long gameTicksSinceFirstPacket, gameTicksSinceLastScreenSend, gameTicksSinceLastScreenReceiveAndRender;
+    private int lastIndexReceived, width = ScreenParticleRenderer.defaultWidthScaledDown, height = ScreenParticleRenderer.defaultHeightScaledDown;
+    private SingleQuadParticle.Layer particleRenderType;
+    private boolean needsNewRenderFromPixelData, needsNewRenderToPixelData;
+    private Screen lastScreen;
+    private Identifier textureId;
+    private DynamicTexture image;
+    private int imageWidth, imageHeight;
+
+    public synchronized void initClient() {
+        if (textureId == null) {
+            textureId = Identifier.fromNamespaceAndPath("watut", "screen_preview_" + Long.toUnsignedString(NEXT_TEXTURE_ID.incrementAndGet(), 36));
+        }
+        ensureImage(width, height);
+        particleRenderType = new SingleQuadParticle.Layer(false, textureId, RenderPipelines.PARTICLE_TRANSLUCENT, null);
+    }
+
+    public synchronized void ensureImage(int wantedWidth, int wantedHeight) {
+        int w = Math.max(1, Math.min(wantedWidth, 8192));
+        int h = Math.max(1, Math.min(wantedHeight, 8192));
+        if (textureId == null) {
+            textureId = Identifier.fromNamespaceAndPath("watut", "screen_preview_" + Long.toUnsignedString(NEXT_TEXTURE_ID.incrementAndGet(), 36));
+        }
+        if (image != null && imageWidth == w && imageHeight == h) return;
+        if (image != null) {
+            image.close();
+            image = null;
+        }
+        image = new DynamicTexture("WATUT screen preview", w, h, true);
+        imageWidth = w;
+        imageHeight = h;
+        Minecraft.getInstance().getTextureManager().register(textureId, image);
+        particleRenderType = new SingleQuadParticle.Layer(false, textureId, RenderPipelines.PARTICLE_TRANSLUCENT, null);
+    }
+
+    public Identifier getTextureId() { return textureId; }
+    public DynamicTexture getImage() { return image; }
+    public void setImage(DynamicTexture value) { image = value; }
+    public void closeImage() {
+        if (image != null) { image.close(); image = null; }
+    }
+    public ByteBuffer getTexturePixelData() { return texturePixelData; }
+    public void freeTexturePixelData() {
+        if (texturePixelData != null && texturePixelData.isDirect()) MemoryUtil.memFree(texturePixelData);
+        texturePixelData = null;
+    }
+    public void setTexturePixelData(ByteBuffer value) { texturePixelData = value; }
+    public SingleQuadParticle.Layer getParticleRenderType() { return particleRenderType; }
+    public void setParticleRenderType(SingleQuadParticle.Layer value) { particleRenderType = value; }
+    public synchronized boolean needsNewRenderFromPixelData() { return needsNewRenderFromPixelData; }
+    public synchronized void markNeedsNewRenderFromPixelData(boolean value) { needsNewRenderFromPixelData = value; }
+    public boolean isNeedsNewRenderToPixelData() { return needsNewRenderToPixelData; }
+    public void setNeedsNewRenderToPixelData(boolean value) { needsNewRenderToPixelData = value; }
+    public byte[] getTexturePixelDataPartial() { return texturePixelDataPartial; }
+    public void setTexturePixelDataPartial(byte[] value) { texturePixelDataPartial = value; }
+    public long getGameTicksSinceFirstPacket() { return gameTicksSinceFirstPacket; }
+    public void setGameTicksSinceFirstPacket(long value) { gameTicksSinceFirstPacket = value; }
+    public int getLastIndexReceived() { return lastIndexReceived; }
+    public void setLastIndexReceived(int value) { lastIndexReceived = value; }
+    public long getGameTicksSinceLastScreenSend() { return gameTicksSinceLastScreenSend; }
+    public void setGameTicksSinceLastScreenSend(long value) { gameTicksSinceLastScreenSend = value; }
+    public long getGameTicksSinceLastScreenReceiveAndRender() { return gameTicksSinceLastScreenReceiveAndRender; }
+    public void setGameTicksSinceLastScreenReceiveAndRender(long value) { gameTicksSinceLastScreenReceiveAndRender = value; }
+    public AtomicBoolean getIsBufferReady() { return isBufferReady; }
+    public ByteBuffer getDecompressionBuffer() { return decompressionBuffer; }
+    public void setDecompressionBuffer(ByteBuffer value) { decompressionBuffer = value; }
+    public int getWidth() { return width; }
+    public void setWidth(int value) { width = value; }
+    public int getHeight() { return height; }
+    public void setHeight(int value) { height = value; }
+    public Screen getLastScreen() { return lastScreen; }
+    public void setLastScreen(Screen value) { lastScreen = value; }
+}
+'''
+    (java_root / "client/screen/ScreenData.java").write_text(screen_data, encoding="utf-8")
+
+    capture = r'''package com.corosus.watut.client.screen;
+
+import com.corosus.watut.PlayerStatus;
+import com.corosus.watut.WatutMod;
+import com.corosus.watut.config.ConfigServerControlledSyncedToClient;
+import com.mojang.blaze3d.platform.NativeImage;
+import com.mojang.blaze3d.pipeline.RenderTarget;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.Screenshot;
+import net.minecraft.client.renderer.GameRenderer;
+import net.minecraft.client.renderer.texture.DynamicTexture;
+import net.minecraft.util.ARGB;
+
+import java.nio.ByteBuffer;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Consumer;
+
+public final class ScreenCapture26 {
+    private static final AtomicBoolean capturePending = new AtomicBoolean(false);
+    private ScreenCapture26() {}
+
+    public static void captureIfNeeded(GameRenderer renderer) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level == null || mc.player == null || mc.gui == null || mc.gui.screen() == null) return;
+        if (!RenderHelper.useDynamicGUISystem()) return;
+        PlayerStatus status = WatutMod.getPlayerStatusManagerClient().getStatusLocal();
+        ScreenData data = status.getScreenData();
+        if (!data.isNeedsNewRenderToPixelData() || !capturePending.compareAndSet(false, true)) return;
+
+        boolean entireScreen = ConfigServerControlledSyncedToClient.dynamicGuiShowClientsEntireScreen;
+        int scale = entireScreen ? 1 : Math.max(1, (int)Math.round(mc.getWindow().getGuiScale()));
+        data.setNeedsNewRenderToPixelData(false);
+        try {
+            RenderTarget target = renderer.mainRenderTarget();
+            Screenshot.takeScreenshot(target, scale, image -> finishCapture(mc, status, image, entireScreen));
+        } catch (Throwable error) {
+            data.setNeedsNewRenderToPixelData(true);
+            capturePending.set(false);
+            System.err.println("[WATUT] Minecraft 26.3 screen capture failed: " + error);
+        }
+    }
+
+    private static void finishCapture(Minecraft mc, PlayerStatus status, NativeImage image, boolean entireScreen) {
+        try {
+            if (image == null) {
+                status.getScreenData().setNeedsNewRenderToPixelData(true);
+                return;
+            }
+
+            int srcWidth = image.getWidth();
+            int srcHeight = image.getHeight();
+            if (srcWidth <= 0 || srcHeight <= 0 || (long)srcWidth * srcHeight * 4L > 64L * 1024L * 1024L) {
+                status.getScreenData().setNeedsNewRenderToPixelData(true);
+                return;
+            }
+
+            final int outWidth;
+            final int outHeight;
+            final ByteBuffer rgba;
+            if (entireScreen) {
+                outWidth = srcWidth;
+                outHeight = srcHeight;
+                rgba = ByteBuffer.allocateDirect(Math.multiplyExact(Math.multiplyExact(outWidth, outHeight), 4));
+                for (int y = 0; y < outHeight; y++) {
+                    for (int x = 0; x < outWidth; x++) putPixel(rgba, image.getPixel(x, y));
+                }
+            } else {
+                outWidth = ScreenParticleRenderer.defaultWidthScaledDown;
+                outHeight = ScreenParticleRenderer.defaultHeightScaledDown;
+                rgba = ByteBuffer.allocateDirect(outWidth * outHeight * 4);
+                int srcLeft = Math.max(0, (srcWidth - outWidth) / 2);
+                int srcTop = Math.max(0, (srcHeight - outHeight) / 2);
+                int dstLeft = Math.max(0, (outWidth - srcWidth) / 2);
+                int dstTop = Math.max(0, (outHeight - srcHeight) / 2);
+                int copyWidth = Math.min(outWidth - dstLeft, srcWidth - srcLeft);
+                int copyHeight = Math.min(outHeight - dstTop, srcHeight - srcTop);
+                for (int y = 0; y < outHeight; y++) {
+                    for (int x = 0; x < outWidth; x++) {
+                        int sx = srcLeft + x - dstLeft;
+                        int sy = srcTop + y - dstTop;
+                        if (x >= dstLeft && y >= dstTop && x < dstLeft + copyWidth && y < dstTop + copyHeight) {
+                            putPixel(rgba, image.getPixel(sx, sy));
+                        } else {
+                            rgba.put((byte)0).put((byte)0).put((byte)0).put((byte)0);
+                        }
+                    }
+                }
+            }
+            rgba.flip();
+            ScreenData data = status.getScreenData();
+            data.setWidth(outWidth);
+            data.setHeight(outHeight);
+            data.setTexturePixelData(RenderHelper.compress(rgba));
+            WatutMod.getPlayerStatusManagerClient().sendScreenRenderData(status);
+        } catch (Throwable error) {
+            status.getScreenData().setNeedsNewRenderToPixelData(true);
+            System.err.println("[WATUT] Could not encode screen preview: " + error);
+        } finally {
+            if (image != null) image.close();
+            capturePending.set(false);
+        }
+    }
+
+    private static void putPixel(ByteBuffer output, int color) {
+        output.put((byte)ARGB.red(color));
+        output.put((byte)ARGB.green(color));
+        output.put((byte)ARGB.blue(color));
+        output.put((byte)ARGB.alpha(color));
+    }
+}
+'''
+    (java_root / "client/screen/ScreenCapture26.java").write_text(capture, encoding="utf-8")
+
+    gui_render = r'''package com.corosus.watut.mixin.client;
+
+import com.corosus.watut.WatutMod;
+import com.corosus.watut.client.screen.RenderHelper;
+import net.minecraft.client.DeltaTracker;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.Gui;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.renderer.state.gui.GuiRenderState;
+import net.minecraft.client.gui.screens.ChatScreen;
+import org.spongepowered.asm.mixin.Final;
+import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Shadow;
+import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+
+@Mixin(Gui.class)
+public abstract class GuiRender {
+    @Shadow @Final private GuiRenderState guiRenderState;
+
+    @Inject(method = "extractRenderState", at = @At("TAIL"))
+    private void watut$extractGuiState(CallbackInfo ci) {
+        Minecraft mc = Minecraft.getInstance();
+        int mouseX = (int)(mc.mouseHandler.xpos() / mc.getWindow().getGuiScale());
+        int mouseY = (int)(mc.mouseHandler.ypos() / mc.getWindow().getGuiScale());
+        GuiGraphicsExtractor graphics = new GuiGraphicsExtractor(mc, this.guiRenderState, mouseX, mouseY);
+        RenderHelper.guiRender(graphics);
+        WatutMod.getPlayerStatusManagerClient().onGuiRender(graphics);
+    }
+}
+'''
+    (java_root / "mixin/client/GuiRender.java").write_text(gui_render, encoding="utf-8")
+
+    capture_mixin = r'''package com.corosus.watut.mixin.client;
+
+import com.corosus.watut.client.screen.ScreenCapture26;
+import net.minecraft.client.renderer.GameRenderer;
+import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+
+@Mixin(GameRenderer.class)
+public abstract class GameRendererCapture26 {
+    @Inject(method = "render", at = @At("TAIL"))
+    private void watut$captureDynamicScreen(CallbackInfo ci) {
+        ScreenCapture26.captureIfNeeded((GameRenderer)(Object)this);
+    }
+}
+'''
+    (java_root / "mixin/client/GameRendererCapture26.java").write_text(capture_mixin, encoding="utf-8")
+
+    # Keep the original typed/chat status overlay alive in the GUI extraction pass.
+    pm = java_root / "PlayerStatusManagerClient.java"
+    text = pm.read_text(encoding="utf-8")
+    text = re.sub(
+        r"(?s)    public void onGuiRender\(GuiGraphicsExtractor graphics\) \{.*?\n    \}\n\n    public String getTypingPlayers",
+        """    public void onGuiRender(GuiGraphicsExtractor graphics) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.gui.screen() instanceof ChatScreen && mc.getConnection() != null && mc.level != null
+                && ConfigClient.screenTypingVisible && ConfigServerControlledSyncedToClient.screenTypingVisible) {
+            graphics.text(mc.font, Component.literal(getTypingPlayers()),
+                    2 + ConfigClient.screenTypingRelativePosition_X,
+                    mc.getWindow().getGuiScaledHeight() - 50 + ConfigClient.screenTypingRelativePosition_Y,
+                    0xFFFFFF);
+        }
+    }
+
+    public String getTypingPlayers""",
+        text,
+        count=1
+    )
+    pm.write_text(text, encoding="utf-8")
+
+    # Restore screen preview texture upload on the receiving client.
+    rh = java_root / "client/screen/RenderHelper.java"
+    text = rh.read_text(encoding="utf-8")
+    text = text.replace(
+        "public static boolean useDynamicGUISystem() { return false; }",
+        """public static boolean useDynamicGUISystem() {
+        if (ConfigServerControlledSyncedToClient.dynamicGuiUseOldSimpleGUIVisual) return false;
+        if (ConfigClient.dontSendDetailedGUIInfo) return false;
+        return true;
+    }"""
+    )
+    text = re.sub(
+        r"public static void guiRender\(GuiGraphicsExtractor graphics\) \{ \}",
+        """public static void guiRender(GuiGraphicsExtractor graphics) {
+        if (!useDynamicGUISystem()) return;
+        for (PlayerStatus status : WatutMod.getPlayerStatusManagerClient().lookupPlayerToStatus.values()) {
+            ScreenData data = status.getScreenData();
+            if (!data.getIsBufferReady().get() || !data.needsNewRenderFromPixelData()) continue;
+            ByteBuffer pixels = data.getDecompressionBuffer();
+            if (pixels == null) pixels = data.getTexturePixelData();
+            if (pixels == null) {
+                data.getIsBufferReady().set(false);
+                data.markNeedsNewRenderFromPixelData(false);
+                continue;
+            }
+            int width = data.getWidth();
+            int height = data.getHeight();
+            long required = (long)width * height * 4L;
+            if (width <= 0 || height <= 0 || required > 64L * 1024L * 1024L || pixels.limit() < required) {
+                data.getIsBufferReady().set(false);
+                data.markNeedsNewRenderFromPixelData(false);
+                continue;
+            }
+            data.initClient();
+            data.ensureImage(width, height);
+            var nativeImage = data.getImage().getPixels();
+            for (int y = 0; y < height; y++) {
+                for (int x = 0; x < width; x++) {
+                    int offset = (y * width + x) * 4;
+                    int r = pixels.get(offset) & 255;
+                    int g = pixels.get(offset + 1) & 255;
+                    int b = pixels.get(offset + 2) & 255;
+                    int a = pixels.get(offset + 3) & 255;
+                    nativeImage.setPixel(x, y, net.minecraft.util.ARGB.color(a, r, g, b));
+                }
+            }
+            data.getImage().upload();
+            data.getIsBufferReady().set(false);
+            data.markNeedsNewRenderFromPixelData(false);
+        }
+    }""",
+        text,
+        count=1
+    )
+    rh.write_text(text, encoding="utf-8")
+
+    # Keep dynamic screen texture UVs independent of the inventory sprite atlas.
+    dynamic = java_root / "particle/ParticleDynamic.java"
+    if dynamic.exists():
+        text = dynamic.read_text(encoding="utf-8")
+        if "getU0()" not in text:
+            text = text.replace(
+                "    @Override\\n    protected SingleQuadParticle.Layer getLayer() {",
+                """    @Override public float getU0() { return 0.0F; }
+    @Override public float getU1() { return 1.0F; }
+    @Override public float getV0() { return 0.0F; }
+    @Override public float getV1() { return 1.0F; }
+
+    @Override
+    protected SingleQuadParticle.Layer getLayer() {""",
+                1
+            )
+        dynamic.write_text(text, encoding="utf-8")
+
+    # Screen capture may contain a full 4K display; keep decompression bounded but large enough for it.
+    rh_text = rh.read_text(encoding="utf-8")
+    rh_text = rh_text.replace("16 * 1024 * 1024", "64 * 1024 * 1024")
+    rh.write_text(rh_text, encoding="utf-8")
+
+    # Register the new end-of-frame screenshot capture hook in Fabric's actual mixin config.
+    for mixin_config in (root / "src/main/resources").glob("*fabric.mixins.json"):
+        try:
+            mixin_meta = json.loads(mixin_config.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        client_mixins = mixin_meta.setdefault("client", [])
+        if "client.GuiRender" not in client_mixins:
+            client_mixins.append("client.GuiRender")
+        if "client.GameRendererCapture26" not in client_mixins:
+            client_mixins.append("client.GameRendererCapture26")
+        mixin_config.write_text(json.dumps(mixin_meta, indent=2) + "\n", encoding="utf-8")
