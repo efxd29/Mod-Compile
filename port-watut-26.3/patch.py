@@ -823,3 +823,85 @@ if meta_path.exists():
     meta_path.write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
 
 print(f"Prepared {kind}: original feature classes/resources/mixins retained; Fabric config persistence ported to TOML; target Minecraft 26.3.")
+
+
+# Follow-up API port fixes discovered by the 26.3 compile (without deleting feature sources).
+if kind == "watut":
+    java_root = root / "src/main/java/com/corosus/watut"
+    for source in java_root.rglob("*.java"):
+        text = source.read_text(encoding="utf-8")
+        # Gui.screen is exposed as screen() in the 26.3 client API.
+        text = re.sub(r"\.gui\.screen(?!\s*\()", ".gui.screen()", text)
+
+        # 26.3 CompoundTag scalar getters are Optional-returning; use the explicit default API.
+        text = re.sub(r'\.getInt\(([^()]*)\)(?:\.orElse\(0\))?', r'.getIntOr(\1, 0)', text)
+        text = re.sub(r'\.getFloat\(([^()]*)\)(?:\.orElse\(0(?:\.0)?F?\))?', r'.getFloatOr(\1, 0.0F)', text)
+        text = re.sub(r'\.getBoolean\(([^()]*)\)(?:\.orElse\(false\))?', r'.getBooleanOr(\1, false)', text)
+        text = re.sub(r'\.getString\(([^()]*)\)(?:\.orElse\(""\))?', r'.getStringOr(\1, "")', text)
+        text = re.sub(r'\.getByteArray\(([^()]*)\)(?:\.orElse\(new byte\[0\]\))?', r'.getByteArray(\1).orElse(new byte[0])', text)
+        text = re.sub(r'\.getCompound\(([^()]*)\)(?:\.orElse\(new CompoundTag\(\)\))?', r'.getCompoundOrEmpty(\1)', text)
+        text = re.sub(r'\.getLong\(([^()]*)\)(?:\.orElse\(0L\))?', r'.getLongOr(\1, 0L)', text)
+        text = re.sub(r'\.getDouble\(([^()]*)\)(?:\.orElse\(0(?:\.0)?D?\))?', r'.getDoubleOr(\1, 0.0D)', text)
+
+        # 26.3 serializes ItemStack through its registry-aware codec, not save/parseOptional.
+        if source.name == "PlayerStatusManagerServer.java":
+            text = text.replace("itemStack.save(level.registryAccess())",
+                "ItemStack.CODEC.encodeStart(level.registryAccess().createSerializationContext(NbtOps.INSTANCE), itemStack).getOrThrow()")
+            if "import net.minecraft.nbt.NbtOps;" not in text:
+                text = text.replace("import net.minecraft.nbt.CompoundTag;", "import net.minecraft.nbt.CompoundTag;\nimport net.minecraft.nbt.NbtOps;")
+            # Inventory.items is private in this release; preserve slot order via Container accessors.
+            text = text.replace(
+                "for (ItemStack item : player.getInventory().items) {",
+                "for (int inventorySlot = 0; inventorySlot < player.getInventory().getContainerSize(); inventorySlot++) {\n            ItemStack item = player.getInventory().getItem(inventorySlot);"
+            )
+        if source.name == "PlayerStatusManagerClient.java":
+            text = re.sub(
+                r'ItemStack\.parseOptional\(Minecraft\.getInstance\(\)\.level\.registryAccess\(\),\s*data\.getCompoundOrEmpty\(([^()]*)\)\)',
+                r'ItemStack.CODEC.parse(Minecraft.getInstance().level.registryAccess().createSerializationContext(NbtOps.INSTANCE), data.getCompoundOrEmpty(\1)).result().orElse(ItemStack.EMPTY)',
+                text
+            )
+            # Keep the existing item particle travel animation; it no longer needs removed renderer buffers.
+            text = text.replace(
+                "new ParticleItem(Minecraft.getInstance().level, 1, itemStack,\n                    Minecraft.getInstance().renderBuffers(),\n                    Minecraft.getInstance().getEntityRenderDispatcher(),",
+                "new ParticleItem(Minecraft.getInstance().level, 1, itemStack,"
+            )
+            if "import net.minecraft.nbt.NbtOps;" not in text:
+                text = text.replace("import net.minecraft.nbt.CompoundTag;", "import net.minecraft.nbt.CompoundTag;\nimport net.minecraft.nbt.NbtOps;")
+        if text != source.read_text(encoding="utf-8"):
+            source.write_text(text, encoding="utf-8")
+
+    # The item transfer particle still animates between inventory and container, using current client APIs.
+    particle_item = java_root / "particle/ParticleItem.java"
+    if particle_item.exists():
+        text = particle_item.read_text(encoding="utf-8")
+        text = text.replace("import net.minecraft.client.renderer.RenderBuffers;\n", "")
+        text = text.replace("import net.minecraft.client.renderer.entity.EntityRenderDispatcher;\n", "")
+        text = text.replace(
+            "public ParticleItem(ClientLevel level, float brightness, ItemStack stack, RenderBuffers buffers,\n                        EntityRenderDispatcher dispatcher, float xFrom, float yFrom, float zFrom,",
+            "public ParticleItem(ClientLevel level, float brightness, ItemStack stack,\n                        float xFrom, float yFrom, float zFrom,"
+        )
+        particle_item.write_text(text, encoding="utf-8")
+
+    # The sprite sequence provider must expose its first frame in 26.3.
+    sprite_set = java_root / "spritesets/SpriteSetPlayer.java"
+    if sprite_set.exists():
+        text = sprite_set.read_text(encoding="utf-8")
+        if "TextureAtlasSprite first()" not in text:
+            text = text.replace(
+                "public class SpriteSetPlayer implements SpriteSet {\n",
+                "public class SpriteSetPlayer implements SpriteSet {\n\n    @Override\n    public TextureAtlasSprite first() { return list.get(0); }\n"
+            )
+        sprite_set.write_text(text, encoding="utf-8")
+
+    # 26.3's single-quad particles use vanilla particle layers; custom legacy render-order entries are gone.
+    client_init = java_root / "loader/fabric/WatutModFabricClient.java"
+    if client_init.exists():
+        text = client_init.read_text(encoding="utf-8")
+        text = re.sub(
+            r'\n\s*List<ParticleRenderType> render_order = new ArrayList<>\(\);\s*\n\s*render_order\.addAll\(ParticleEngine\.RENDER_ORDER\);\s*\n\s*render_order\.add\(ParticleRotating\.PARTICLE_SHEET_TRANSLUCENT_NO_FACE_CULL\);\s*\n\s*ParticleEngine\.RENDER_ORDER = render_order;\s*',
+            "\n",
+            text
+        )
+        text = text.replace("import net.minecraft.client.particle.ParticleRenderType;\n", "")
+        text = text.replace("import net.minecraft.client.particle.ParticleEngine;\n", "")
+        client_init.write_text(text, encoding="utf-8")
