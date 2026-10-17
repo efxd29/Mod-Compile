@@ -1990,3 +1990,168 @@ public class ParticleItem extends ParticleRotating {
         '@Inject(method = "render", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/gui/render/GuiRenderer;endFrame()V", shift = At.Shift.BEFORE), require = 0)'
     )
     gm.write_text(gmt, encoding="utf-8")
+
+
+# 26.3 final parity fixes: correct capture hook signature/PiP renderers, idle icons, and preview sizing.
+if kind == "watut":
+    java_root = root / "src/main/java/com/corosus/watut"
+
+    # Screen.extractRenderStateWithTooltipAndSubtitles already extracts deferred elements itself.
+    sc_path = java_root / "client/screen/ScreenCapture26.java"
+    sc = sc_path.read_text(encoding="utf-8")
+    sc = sc.replace('                invokeByName(graphics, "extractDeferredElements", mouseX, mouseY, partialTick);\n', '')
+    sc = re.sub(
+        r"(?s)    private static List<\?> findPipRegistrations\(Object renderer\) throws IllegalAccessException \{.*?\n    \}\n\n    private static void resetState",
+        r'''    private static List<?> findPipRegistrations(Object renderer) throws IllegalAccessException {
+        if (renderer == null) return List.of();
+        try {
+            Class<?> base = Class.forName("net.minecraft.client.gui.render.pip.PictureInPictureRenderer");
+            for (Field field : renderer.getClass().getDeclaredFields()) {
+                if (Modifier.isStatic(field.getModifiers())) continue;
+                field.setAccessible(true);
+                Object value = field.get(renderer);
+                if (value instanceof java.util.Map<?, ?> map) {
+                    List<Object> renderers = new java.util.ArrayList<>();
+                    for (Object candidate : map.values()) {
+                        if (base.isInstance(candidate)) renderers.add(candidate);
+                    }
+                    if (!renderers.isEmpty()) return renderers;
+                }
+                if (value instanceof List<?> list) {
+                    List<Object> renderers = new java.util.ArrayList<>();
+                    for (Object candidate : list) if (base.isInstance(candidate)) renderers.add(candidate);
+                    if (!renderers.isEmpty()) return renderers;
+                }
+            }
+        } catch (ClassNotFoundException ignored) {}
+        throw new IllegalStateException("Minecraft's GUI PictureInPictureRenderer registry was not found");
+    }
+
+    private static void resetState''',
+        sc,
+        count=1
+    )
+    # Capture is injected inside GameRenderer.render(), which has no method parameters in 26.3.
+    # Obtain the live delta tracker from Minecraft rather than inventing method arguments.
+    game_mixin = r'''package com.corosus.watut.mixin.client;
+
+import com.corosus.watut.client.screen.ScreenCapture26;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.GameRenderer;
+import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+
+@Mixin(GameRenderer.class)
+public abstract class GameRendererCapture26 {
+    @Inject(method = "render", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/gui/render/GuiRenderer;endFrame()V", shift = At.Shift.BEFORE), require = 0)
+    private void watut$captureDynamicScreen(CallbackInfo ci) {
+        ScreenCapture26.captureIfNeeded((GameRenderer)(Object)this, Minecraft.getInstance().getDeltaTracker());
+    }
+}
+'''
+    (java_root / "mixin/client/GameRendererCapture26.java").write_text(game_mixin, encoding="utf-8")
+
+    # Preserve WATUT's visual idle-state replacement in the modern extractor-based player tab.
+    pm = java_root / "PlayerStatusManagerClient.java"
+    text = pm.read_text(encoding="utf-8")
+    text = re.sub(
+        r"(?s)    public boolean renderPingIconHook\(PlayerTabOverlay playerTabOverlay, GuiGraphicsExtractor pGuiGraphics, int p_281809_, int p_282801_, int pY, PlayerInfo pPlayerInfo\) \{.*?\n    \}\n\n    public void setupRotationsHook",
+        """    public boolean renderPingIconHook(PlayerTabOverlay overlay, GuiGraphicsExtractor graphics, int slotWidth, int x, int y, PlayerInfo info) {
+        if (info == null || info.getProfile() == null
+                || !ConfigClient.showIdleStatesInPlayerList
+                || !ConfigServerControlledSyncedToClient.showIdleStatesInPlayerList) return false;
+        PlayerStatus playerStatus = getStatus(info.getProfile().id());
+        if (!playerStatus.isIdle()) return false;
+        graphics.blitSprite(RenderPipelines.GUI_TEXTURED, ParticleRegistry.idle.getSprite(),
+                x + slotWidth - 11, y, 10, 8);
+        return true;
+    }
+
+    public void setupRotationsHook""",
+        text,
+        count=1
+    )
+    if "import net.minecraft.client.renderer.RenderPipelines;" not in text:
+        text = text.replace("import net.minecraft.client.gui.GuiGraphicsExtractor;", "import net.minecraft.client.gui.GuiGraphicsExtractor;\nimport net.minecraft.client.renderer.RenderPipelines;")
+    pm.write_text(text, encoding="utf-8")
+
+    # 26.3 no longer has renderPingIcon(); use the corresponding extractor hook.
+    ping_mixin = r'''package com.corosus.watut.mixin.client;
+
+import com.corosus.watut.WatutMod;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.components.PlayerTabOverlay;
+import net.minecraft.client.multiplayer.PlayerInfo;
+import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+
+@Mixin(value = PlayerTabOverlay.class, priority = 999)
+public abstract class RenderPingIconInject {
+    @Inject(
+        method = "extractPingIcon(Lnet/minecraft/client/gui/GuiGraphicsExtractor;IIILnet/minecraft/client/multiplayer/PlayerInfo;)V",
+        at = @At("HEAD"),
+        cancellable = true,
+        require = 0
+    )
+    private void watut$extractIdleIcon(GuiGraphicsExtractor graphics, int slotWidth, int x, int y, PlayerInfo info, CallbackInfo ci) {
+        if (WatutMod.getPlayerStatusManagerClient().renderPingIconHook(
+                (PlayerTabOverlay)(Object)this, graphics, slotWidth, x, y, info)) {
+            ci.cancel();
+        }
+    }
+}
+'''
+    (java_root / "mixin/client/RenderPingIconInject.java").write_text(ping_mixin, encoding="utf-8")
+
+    mixin_config = root / "src/main/resources/watut_fabric.mixins.json"
+    if mixin_config.exists():
+        meta = json.loads(mixin_config.read_text(encoding="utf-8"))
+        client_mixins = meta.setdefault("client", [])
+        if "client.RenderPingIconInject" not in client_mixins:
+            client_mixins.append("client.RenderPingIconInject")
+        mixin_config.write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
+
+    # Recover original WATUT world-size scaling for screen planes (normal preview and full-screen modes).
+    dynamic_path = java_root / "particle/ParticleDynamic.java"
+    dynamic = dynamic_path.read_text(encoding="utf-8")
+    dynamic = dynamic.replace(
+        "import com.corosus.watut.ParticleRegistry;",
+        "import com.corosus.watut.ParticleRegistry;\nimport com.corosus.watut.client.screen.ScreenParticleRenderer;\nimport com.corosus.watut.config.ConfigClient;\nimport com.corosus.watut.config.ConfigServerControlledSyncedToClient;"
+    )
+    dynamic = dynamic.replace(
+        "        this.quadSize = 0.5F;",
+        "        this.quadSize = 0.5F;"
+    )
+    if "public float getQuadSize(float partialTick)" not in dynamic:
+        dynamic = dynamic.replace(
+            "    @Override\n    public void tick() {",
+            """    @Override
+    public float getQuadSize(float partialTick) {
+        float worldScale = ConfigServerControlledSyncedToClient.dynamicGuiShowClientsEntireScreen ? 2.0F : 1.0F;
+        return super.getQuadSize(partialTick) * worldScale * ConfigClient.particleSizeScale;
+    }
+
+    @Override
+    public void tick() {""",
+            1
+        )
+    dynamic_path.write_text(dynamic, encoding="utf-8")
+
+    # Don't show the old anvil tile while each transferred-item icon is being captured.
+    item_path = java_root / "particle/ParticleItem.java"
+    item = item_path.read_text(encoding="utf-8")
+    item = item.replace("    private volatile boolean expired;", "    private volatile boolean expired;\n    private volatile boolean iconReady;")
+    item = item.replace("            else this.itemLayer = layer;", "            else { this.itemLayer = layer; this.iconReady = true; }")
+    item = item.replace("        return itemLayer == null ? SingleQuadParticle.Layer.TRANSLUCENT : itemLayer;", "        return !iconReady ? SingleQuadParticle.Layer.TRANSLUCENT : itemLayer;")
+    item = item.replace(
+        "    @Override public float getU0() { return 0.0F; }\n    @Override public float getU1() { return 1.0F; }\n    @Override public float getV0() { return 0.0F; }\n    @Override public float getV1() { return 1.0F; }",
+        """    @Override public float getU0() { return iconReady ? 0.0F : super.getU0(); }
+    @Override public float getU1() { return iconReady ? 1.0F : super.getU1(); }
+    @Override public float getV0() { return iconReady ? 0.0F : super.getV0(); }
+    @Override public float getV1() { return iconReady ? 1.0F : super.getV1(); }"""
+    )
+    item_path.write_text(item, encoding="utf-8")
