@@ -2382,3 +2382,125 @@ if kind == "watut":
     helper = helper_path.read_text(encoding="utf-8")
     helper = helper.replace("expectedSize > 16 * 1024 * 1024", "expectedSize > 64 * 1024 * 1024")
     helper_path.write_text(helper, encoding="utf-8")
+
+
+# Preserve full-screen image aspect ratio in the actual 3D GUI particle, not only inside the pixels.
+if kind == "watut":
+    java_root = root / "src/main/java/com/corosus/watut"
+
+    sd_path = java_root / "client/screen/ScreenData.java"
+    sd = sd_path.read_text(encoding="utf-8")
+    if "WATUT_ASPECT_RATIOS" not in sd:
+        sd = sd.replace(
+            "import java.util.concurrent.atomic.AtomicLong;",
+            "import java.util.concurrent.atomic.AtomicLong;\nimport java.util.concurrent.ConcurrentHashMap;\nimport java.util.Map;"
+        )
+        sd = sd.replace(
+            "    private static final AtomicLong NEXT_TEXTURE_ID = new AtomicLong();",
+            """    private static final AtomicLong NEXT_TEXTURE_ID = new AtomicLong();
+    private static final Map<Identifier, Float> WATUT_ASPECT_RATIOS = new ConcurrentHashMap<>();
+
+    public static float getAspectRatio(Identifier textureId) {
+        return textureId == null ? 1.0F : WATUT_ASPECT_RATIOS.getOrDefault(textureId, 1.0F);
+    }
+
+    public static void setAspectRatio(Identifier textureId, int width, int height) {
+        if (textureId != null && width > 0 && height > 0) {
+            WATUT_ASPECT_RATIOS.put(textureId, Math.max(0.05F, Math.min(20.0F, (float)width / (float)height)));
+        }
+    }"""
+        )
+    sd = sd.replace(
+        "    public static SingleQuadParticle.Layer createLayer(Identifier id) { return makeLayer(id); }",
+        "    public static SingleQuadParticle.Layer createLayer(Identifier id) { setAspectRatio(id, 1, 1); return makeLayer(id); }"
+    )
+    marker = "        if (image != null && imageWidth == w && imageHeight == h) return;"
+    if marker in sd:
+        sd = sd.replace(marker, "        setAspectRatio(textureId, w, h);\n" + marker, 1)
+    sd_path.write_text(sd, encoding="utf-8")
+
+    # Scale the particle quad's vertical vertices by inverse texture aspect ratio.
+    # This ports WATUT's original rectangular full-screen plane to 26.3's single-quad state renderer.
+    aspect_mixin = r'''package com.corosus.watut.mixin.client;
+
+import com.corosus.watut.client.screen.ScreenData;
+import com.mojang.blaze3d.vertex.VertexConsumer;
+import net.minecraft.client.particle.SingleQuadParticle;
+import net.minecraft.client.renderer.state.level.QuadParticleRenderState;
+import org.joml.Quaternionf;
+import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Unique;
+import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.ModifyArg;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+
+@Mixin(QuadParticleRenderState.class)
+public abstract class QuadParticleAspect {
+    @Unique
+    private static final ThreadLocal<Float> WATUT_CURRENT_ASPECT = ThreadLocal.withInitial(() -> 1.0F);
+
+    @Inject(method = "buildLayer", at = @At("HEAD"))
+    private void watut$beginAspect(SingleQuadParticle.Layer layer, VertexConsumer builder, CallbackInfo ci) {
+        WATUT_CURRENT_ASPECT.set(ScreenData.getAspectRatio(layer.textureAtlasLocation()));
+    }
+
+    @Inject(method = "buildLayer", at = @At("TAIL"))
+    private void watut$endAspect(SingleQuadParticle.Layer layer, VertexConsumer builder, CallbackInfo ci) {
+        WATUT_CURRENT_ASPECT.remove();
+    }
+
+    @ModifyArg(
+        method = "renderRotatedQuad",
+        at = @At(
+            value = "INVOKE",
+            target = "Lnet/minecraft/client/renderer/state/level/QuadParticleRenderState;renderVertex(Lcom/mojang/blaze3d/vertex/VertexConsumer;Lorg/joml/Quaternionf;FFFFFFFFII)V"
+        ),
+        index = 6
+    )
+    private float watut$preservePreviewAspect(float originalY) {
+        float aspect = WATUT_CURRENT_ASPECT.get();
+        if (!Float.isFinite(aspect) || aspect <= 0.0F) return originalY;
+        return originalY / Math.max(0.05F, Math.min(20.0F, aspect));
+    }
+}
+'''
+    (java_root / "mixin/client/QuadParticleAspect.java").write_text(aspect_mixin, encoding="utf-8")
+
+    # Whole-screen capture uses a rectangular texture capped to 4096 pixels on its longest edge.
+    sc_path = java_root / "client/screen/ScreenCapture26.java"
+    sc = sc_path.read_text(encoding="utf-8")
+    pattern = r"""int outWidth = entireScreen \? Math\.min\(4096, Math\.max\(srcWidth, srcHeight\)\) : ScreenParticleRenderer\.defaultWidthScaledDown;
+            int outHeight = entireScreen \? outWidth : ScreenParticleRenderer\.defaultHeightScaledDown;
+            ByteBuffer rgba = ByteBuffer\.allocateDirect\(Math\.multiplyExact\(Math\.multiplyExact\(outWidth, outHeight\), 4\)\);
+            if \(entireScreen\) \{
+.*?
+            \} else \{
+                int srcLeft = Math\.max\(0, \(srcWidth - outWidth\) / 2\);"""
+    replacement = r"""double fit = entireScreen ? Math.min(1.0, 4096.0 / (double)Math.max(srcWidth, srcHeight)) : 1.0;
+            int outWidth = entireScreen ? Math.max(1, (int)Math.round(srcWidth * fit)) : ScreenParticleRenderer.defaultWidthScaledDown;
+            int outHeight = entireScreen ? Math.max(1, (int)Math.round(srcHeight * fit)) : ScreenParticleRenderer.defaultHeightScaledDown;
+            ByteBuffer rgba = ByteBuffer.allocateDirect(Math.multiplyExact(Math.multiplyExact(outWidth, outHeight), 4));
+            if (entireScreen) {
+                for (int y = 0; y < outHeight; y++) {
+                    for (int x = 0; x < outWidth; x++) {
+                        int sx = Math.min(srcWidth - 1, (int)(x / fit));
+                        int sy = Math.min(srcHeight - 1, (int)(y / fit));
+                        putPixel(rgba, image.getPixel(sx, sy));
+                    }
+                }
+            } else {
+                int srcLeft = Math.max(0, (srcWidth - outWidth) / 2);"""
+    sc_new, substitutions = re.subn(pattern, replacement, sc, count=1)
+    if substitutions != 1:
+        raise SystemExit("Could not locate full-screen capture scaler; no build should be produced")
+    sc_path.write_text(sc_new, encoding="utf-8")
+
+    # Register the mixin so the world-space preview geometry follows the transmitted image dimensions.
+    mixin_config = root / "src/main/resources/watut_fabric.mixins.json"
+    if mixin_config.exists():
+        meta = json.loads(mixin_config.read_text(encoding="utf-8"))
+        client_mixins = meta.setdefault("client", [])
+        if "client.QuadParticleAspect" not in client_mixins:
+            client_mixins.append("client.QuadParticleAspect")
+        mixin_config.write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
