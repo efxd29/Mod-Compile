@@ -1757,3 +1757,236 @@ if kind == "watut":
         'try { invokeByName(captureTarget, "clear", false); } catch (NoSuchMethodException noBooleanClear) { invokeByName(captureTarget, "clear"); }'
     )
     capture_path.write_text(text, encoding="utf-8")
+
+
+# Restore the item-transfer effect using the actual item icon, and capture before vanilla GUI endFrame.
+if kind == "watut":
+    java_root = root / "src/main/java/com/corosus/watut"
+
+    sc_path = java_root / "client/screen/ScreenCapture26.java"
+    sc = sc_path.read_text(encoding="utf-8")
+    additions = [
+        "import net.minecraft.client.particle.SingleQuadParticle;",
+        "import net.minecraft.client.renderer.texture.DynamicTexture;",
+        "import net.minecraft.world.item.ItemStack;",
+        "import java.util.concurrent.ConcurrentLinkedQueue;",
+        "import java.util.function.Consumer;",
+    ]
+    anchor = "import net.minecraft.client.gui.GuiGraphicsExtractor;"
+    if anchor in sc:
+        sc = sc.replace(anchor, anchor + "\n" + "\n".join(line for line in additions if line not in sc), 1)
+    sc = sc.replace(
+        "    private static int targetWidth, targetHeight;\n",
+        """    private static int targetWidth, targetHeight;
+    private static final ConcurrentLinkedQueue<ItemIconRequest> itemIconRequests = new ConcurrentLinkedQueue<>();
+
+    private static final class ItemIconRequest {
+        final ItemStack stack;
+        final Identifier textureId;
+        final Consumer<SingleQuadParticle.Layer> callback;
+        ItemIconRequest(ItemStack stack, Identifier textureId, Consumer<SingleQuadParticle.Layer> callback) {
+            this.stack = stack.copy();
+            this.textureId = textureId;
+            this.callback = callback;
+        }
+    }
+
+    public static void requestItemIcon(ItemStack stack, Identifier textureId, Consumer<SingleQuadParticle.Layer> callback) {
+        if (stack == null || stack.isEmpty() || textureId == null || callback == null) return;
+        itemIconRequests.add(new ItemIconRequest(stack, textureId, callback));
+    }
+
+    public static void releaseTexture(Identifier textureId) {
+        try {
+            Minecraft.getInstance().getTextureManager().release(textureId);
+        } catch (Throwable ignored) {}
+    }
+"""
+    )
+    capture_method = r'''    public static void captureIfNeeded(GameRenderer gameRenderer, DeltaTracker deltaTracker) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level == null || mc.player == null || mc.gui == null) return;
+        Screen screen = mc.gui.screen();
+        PlayerStatus status = WatutMod.getPlayerStatusManagerClient().getStatusLocal();
+        ScreenData data = status.getScreenData();
+        boolean doScreen = screen != null && RenderHelper.useDynamicGUISystem() && data.isNeedsNewRenderToPixelData();
+        if ((!doScreen && itemIconRequests.isEmpty()) || !capturePending.compareAndSet(false, true)) return;
+
+        ItemIconRequest itemRequest = doScreen ? null : itemIconRequests.poll();
+        if (!doScreen && itemRequest == null) {
+            capturePending.set(false);
+            return;
+        }
+        if (doScreen) data.setNeedsNewRenderToPixelData(false);
+
+        try {
+            ensureCaptureTarget(mc);
+            ensureCaptureRenderer(gameRenderer, mc);
+            resetState(captureState);
+
+            int mouseX = (int)(mc.mouseHandler.xpos() / mc.getWindow().getGuiScale());
+            int mouseY = (int)(mc.mouseHandler.ypos() / mc.getWindow().getGuiScale());
+            float partialTick = deltaTracker.getGameTimeDeltaTicks();
+            GuiGraphicsExtractor graphics = new GuiGraphicsExtractor(mc, captureState, mouseX, mouseY);
+
+            renderingCapture = true;
+            if (doScreen) {
+                extractScreen(screen, graphics, mouseX, mouseY, partialTick);
+                invokeByName(graphics, "extractDeferredElements", mouseX, mouseY, partialTick);
+                drawCursor(graphics, mouseX, mouseY);
+            } else {
+                graphics.item(itemRequest.stack, Math.max(0, graphics.guiWidth() / 2 - 8),
+                        Math.max(0, graphics.guiHeight() / 2 - 8), 0);
+            }
+
+            invokeByName(captureTarget, "setClearColor", 0.0F, 0.0F, 0.0F, 0.0F);
+            try {
+                invokeByName(captureTarget, "clear", false);
+            } catch (NoSuchMethodException noBooleanClear) {
+                invokeByName(captureTarget, "clear");
+            }
+            invokeByName(captureGuiRenderer, "render");
+            invokeByName(captureGuiRenderer, "endFrame");
+            renderingCapture = false;
+
+            if (doScreen) {
+                boolean entireScreen = ConfigServerControlledSyncedToClient.dynamicGuiShowClientsEntireScreen;
+                int scale = entireScreen ? 1 : Math.max(1, (int)Math.round(mc.getWindow().getGuiScale()));
+                Screenshot.takeScreenshot(captureTarget, scale, image -> finishCapture(status, image, entireScreen));
+            } else {
+                int scale = Math.max(1, (int)Math.round(mc.getWindow().getGuiScale()));
+                ItemIconRequest finalRequest = itemRequest;
+                Screenshot.takeScreenshot(captureTarget, scale, image -> finishItemIcon(mc, finalRequest, image));
+            }
+        } catch (Throwable error) {
+            renderingCapture = false;
+            if (doScreen) data.setNeedsNewRenderToPixelData(true);
+            if (itemRequest != null) itemIconRequests.add(itemRequest);
+            capturePending.set(false);
+            System.err.println("[WATUT] Isolated screen/item capture failed: " + error);
+        }
+    }
+
+    private static void finishItemIcon(Minecraft mc, ItemIconRequest request, NativeImage image) {
+        try {
+            if (image == null || request == null) return;
+            int w = image.getWidth(), h = image.getHeight();
+            if (w <= 0 || h <= 0) return;
+            DynamicTexture texture = new DynamicTexture("WATUT transferred item icon", 16, 16, true);
+            var pixels = texture.getPixels();
+            int left = Math.max(0, (w - 16) / 2);
+            int top = Math.max(0, (h - 16) / 2);
+            int dstLeft = Math.max(0, (16 - w) / 2);
+            int dstTop = Math.max(0, (16 - h) / 2);
+            for (int y = 0; y < 16; y++) {
+                for (int x = 0; x < 16; x++) {
+                    int sx = left + x - dstLeft;
+                    int sy = top + y - dstTop;
+                    if (sx >= 0 && sy >= 0 && sx < w && sy < h) pixels.setPixel(x, y, image.getPixel(sx, sy));
+                    else pixels.setPixel(x, y, 0);
+                }
+            }
+            texture.upload();
+            mc.getTextureManager().register(request.textureId, texture);
+            request.callback.accept(ScreenData.createLayer(request.textureId));
+        } catch (Throwable error) {
+            System.err.println("[WATUT] Could not build transferred item icon: " + error);
+        } finally {
+            if (image != null) image.close();
+            capturePending.set(false);
+        }
+    }
+
+'''
+    sc = re.sub(
+        r"(?s)    public static void captureIfNeeded\(GameRenderer gameRenderer, DeltaTracker deltaTracker\) \{.*?\n    \}\n\n    private static void ensureCaptureTarget",
+        capture_method + "    private static void ensureCaptureTarget",
+        sc,
+        count=1
+    )
+    sc_path.write_text(sc, encoding="utf-8")
+
+    sd_path = java_root / "client/screen/ScreenData.java"
+    sd = sd_path.read_text(encoding="utf-8")
+    anchor = "    public Identifier getTextureId() { return textureId; }"
+    if anchor in sd and "public static SingleQuadParticle.Layer createLayer" not in sd:
+        sd = sd.replace(anchor, "    public static SingleQuadParticle.Layer createLayer(Identifier id) { return makeLayer(id); }\n" + anchor, 1)
+    sd_path.write_text(sd, encoding="utf-8")
+
+    item_particle = r'''package com.corosus.watut.particle;
+
+import com.corosus.watut.ParticleRegistry;
+import com.corosus.watut.client.screen.ScreenCapture26;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.client.particle.SingleQuadParticle;
+import net.minecraft.resources.Identifier;
+import net.minecraft.world.item.ItemStack;
+
+import java.util.HashSet;
+import java.util.concurrent.atomic.AtomicLong;
+
+public class ParticleItem extends ParticleRotating {
+    private static final AtomicLong NEXT_ID = new AtomicLong();
+    public static HashSet<String> itemBlacklist = new HashSet<>();
+    public ItemStack itemStack;
+    public float xFrom, yFrom, zFrom, xTo, yTo, zTo;
+    private final Identifier itemTextureId;
+    private volatile SingleQuadParticle.Layer itemLayer = SingleQuadParticle.Layer.TRANSLUCENT;
+    private volatile boolean expired;
+
+    public ParticleItem(ClientLevel level, float brightness, ItemStack stack,
+                        float xFrom, float yFrom, float zFrom, float xTo, float yTo, float zTo) {
+        super(level, xFrom, yFrom, zFrom);
+        this.itemStack = stack.copy();
+        this.xFrom = xFrom; this.yFrom = yFrom; this.zFrom = zFrom;
+        this.xTo = xTo; this.yTo = yTo; this.zTo = zTo;
+        this.setSprite(ParticleRegistry.anvil.getSprite());
+        this.lifetime = 6;
+        this.gravity = 0;
+        this.quadSize = 0.18F;
+        this.rotationYaw = level.getRandom().nextFloat() * 360F;
+        this.setColor(this.rCol * brightness, this.gCol * brightness, this.bCol * brightness);
+        this.itemTextureId = Identifier.fromNamespaceAndPath("watut", "item_move_" + Long.toUnsignedString(NEXT_ID.incrementAndGet(), 36));
+        ScreenCapture26.requestItemIcon(this.itemStack, this.itemTextureId, layer -> {
+            if (this.expired) ScreenCapture26.releaseTexture(this.itemTextureId);
+            else this.itemLayer = layer;
+        });
+    }
+
+    @Override
+    protected SingleQuadParticle.Layer getLayer() {
+        return itemLayer == null ? SingleQuadParticle.Layer.TRANSLUCENT : itemLayer;
+    }
+
+    @Override public float getU0() { return 0.0F; }
+    @Override public float getU1() { return 1.0F; }
+    @Override public float getV0() { return 0.0F; }
+    @Override public float getV1() { return 1.0F; }
+
+    @Override
+    public void tick() {
+        super.tick();
+        this.xo = this.x; this.yo = this.y; this.zo = this.z;
+        float lerp = ((float)this.age) / 3.0F;
+        this.setPos(net.minecraft.util.Mth.lerp(lerp, xFrom, xTo),
+                    net.minecraft.util.Mth.lerp(lerp, yFrom, yTo),
+                    net.minecraft.util.Mth.lerp(lerp, zFrom, zTo));
+        if (this.age >= 3) this.setPos(xTo, yTo, zTo);
+        if (this.age++ >= this.lifetime) {
+            this.expired = true;
+            this.remove();
+            ScreenCapture26.releaseTexture(this.itemTextureId);
+        }
+    }
+}
+'''
+    (java_root / "particle/ParticleItem.java").write_text(item_particle, encoding="utf-8")
+
+    gm = java_root / "mixin/client/GameRendererCapture26.java"
+    gmt = gm.read_text(encoding="utf-8")
+    gmt = gmt.replace(
+        '@Inject(method = "render", at = @At("TAIL"))',
+        '@Inject(method = "render", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/gui/render/GuiRenderer;endFrame()V", shift = At.Shift.BEFORE), require = 0)'
+    )
+    gm.write_text(gmt, encoding="utf-8")
