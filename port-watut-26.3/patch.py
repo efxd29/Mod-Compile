@@ -2652,3 +2652,11 @@ public abstract class AbstractContainerMenuDoClick {
         if "AbstractContainerMenuDoClick" not in mixins:
             mixins.append("AbstractContainerMenuDoClick")
         mixin_config.write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
+
+
+# Minecraft 26.3 moved the player-specific model into net.minecraft.client.model.player.
+if kind == "watut":
+    path = root / "src/main/java/com/corosus/watut/mixin/client/SetupRotationsInject.java"
+    text = path.read_text(encoding="utf-8")
+    text = text.replace("import net.minecraft.client.model.PlayerModel;", "import net.minecraft.client.model.player.PlayerModel;")
+    path.write_text(text, encoding="utf-8")
