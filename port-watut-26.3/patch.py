@@ -2155,3 +2155,85 @@ public abstract class RenderPingIconInject {
     @Override public float getV1() { return iconReady ? 1.0F : super.getV1(); }"""
     )
     item_path.write_text(item, encoding="utf-8")
+
+
+# Preserve the original preview blur and avoid starving item-move particles during continuous GUI updates.
+if kind == "watut":
+    sc_path = root / "src/main/java/com/corosus/watut/client/screen/ScreenCapture26.java"
+    sc = sc_path.read_text(encoding="utf-8")
+    if "private static volatile boolean prioritizeItemNext" not in sc:
+        sc = sc.replace(
+            "    private static int targetWidth, targetHeight;\n",
+            "    private static int targetWidth, targetHeight;\n    private static volatile boolean prioritizeItemNext;\n",
+            1
+        )
+    old_selection = """        boolean doScreen = screen != null && RenderHelper.useDynamicGUISystem() && data.isNeedsNewRenderToPixelData();
+        if ((!doScreen && itemIconRequests.isEmpty()) || !capturePending.compareAndSet(false, true)) return;
+
+        ItemIconRequest itemRequest = doScreen ? null : itemIconRequests.poll();
+        if (!doScreen && itemRequest == null) {
+            capturePending.set(false);
+            return;
+        }"""
+    new_selection = """        boolean screenDue = screen != null && RenderHelper.useDynamicGUISystem() && data.isNeedsNewRenderToPixelData();
+        boolean haveItem = !itemIconRequests.isEmpty();
+        boolean doScreen = screenDue;
+        if (haveItem && (!screenDue || prioritizeItemNext)) {
+            doScreen = false;
+            prioritizeItemNext = false;
+        } else if (screenDue) {
+            prioritizeItemNext = haveItem;
+        }
+        if ((!doScreen && !haveItem) || !capturePending.compareAndSet(false, true)) return;
+
+        ItemIconRequest itemRequest = doScreen ? null : itemIconRequests.poll();
+        if (!doScreen && itemRequest == null) {
+            capturePending.set(false);
+            return;
+        }"""
+    sc = sc.replace(old_selection, new_selection)
+
+    # Default WATUT previews were blurred after being scaled down; a radius-2 separable-equivalent
+    # box blur restores that visual behavior without putting the GPU shader back into the 26.3 port.
+    if "private static void blurRgba(ByteBuffer" not in sc:
+        blur_helper = r'''    private static void blurRgba(ByteBuffer pixels, int width, int height, int radius) {
+        int byteCount = Math.multiplyExact(Math.multiplyExact(width, height), 4);
+        byte[] source = new byte[byteCount];
+        for (int i = 0; i < byteCount; i++) source[i] = pixels.get(i);
+        byte[] horizontal = new byte[byteCount];
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                for (int c = 0; c < 4; c++) {
+                    int sum = 0, count = 0;
+                    for (int dx = -radius; dx <= radius; dx++) {
+                        int sx = Math.max(0, Math.min(width - 1, x + dx));
+                        sum += source[(y * width + sx) * 4 + c] & 255;
+                        count++;
+                    }
+                    horizontal[(y * width + x) * 4 + c] = (byte)(sum / count);
+                }
+            }
+        }
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                for (int c = 0; c < 4; c++) {
+                    int sum = 0, count = 0;
+                    for (int dy = -radius; dy <= radius; dy++) {
+                        int sy = Math.max(0, Math.min(height - 1, y + dy));
+                        sum += horizontal[(sy * width + x) * 4 + c] & 255;
+                        count++;
+                    }
+                    pixels.put((y * width + x) * 4 + c, (byte)(sum / count));
+                }
+            }
+        }
+    }
+
+'''
+        sc = sc.replace("    private static void putPixel(ByteBuffer output, int color) {", blur_helper + "    private static void putPixel(ByteBuffer output, int color) {", 1)
+    sc = sc.replace(
+        "            rgba.flip();\n            ScreenData data = status.getScreenData();",
+        "            if (!entireScreen) blurRgba(rgba, outWidth, outHeight, 2);\n            rgba.flip();\n            ScreenData data = status.getScreenData();",
+        1
+    )
+    sc_path.write_text(sc, encoding="utf-8")
