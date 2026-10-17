@@ -101,6 +101,10 @@ jobs:
                   print(line)
           PY
 
+      - name: Select Fabric build script
+        shell: bash
+        run: cp watut/build_fabric.gradle watut/build.gradle
+
       - name: Install Gradle 9.7.1
         shell: bash
         run: |
@@ -114,7 +118,7 @@ jobs:
         working-directory: watut
         run: |
           set +e
-          gradle -b build_fabric.gradle build --no-daemon --console=plain --stacktrace > "$GITHUB_WORKSPACE/out-build.log" 2>&1
+          gradle build --no-daemon --console=plain --stacktrace > "$GITHUB_WORKSPACE/out-build.log" 2>&1
           rc=$?
           set -e
           cat "$GITHUB_WORKSPACE/out-build.log"
