@@ -59,6 +59,78 @@ jobs:
           echo "Source: jonahnm/WATUT branch 26.2"
           grep -E '^(minecraft_version|loader_version|fabric_version|mod_version|coroutil_version)=' WATUT/gradle.properties
 
+      - name: Normalize fork-specific render hooks for 26.3
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import re
+          from pathlib import Path
+
+          root = Path("WATUT/src/main/java/com/corosus/watut")
+          client = root / "PlayerStatusManagerClient.java"
+          text = client.read_text(encoding="utf-8")
+          text = re.sub(r"(?m)^\\s*public static ShaderProgramBlur (?:positionTexBlur|positionTexBlurHorizontal|positionTexBlurVertical|particle);\\s*\\n", "", text)
+          client.write_text(text, encoding="utf-8")
+
+          # These 26.2 fork classes use a shader API that is not present in 26.3.
+          # The 26.3 port uses the new ScreenCapture26/GPU texture path instead.
+          shader = root / "ShaderProgramBlur.java"
+          if shader.exists():
+              shader.unlink()
+          registry = root / "ShaderRegistry.java"
+          registry.write_text(
+              "package com.corosus.watut;\\n"
+              "public final class ShaderRegistry {\\n"
+              "    private ShaderRegistry() {}\\n"
+              "    public static void init() {}\\n"
+              "    public static void reloadShaders() {}\\n"
+              "}\\n",
+              encoding="utf-8",
+          )
+
+          # The 26.3 ScreenData port stores an already-built particle layer in this field.
+          sd = root / "client/screen/ScreenData.java"
+          s = sd.read_text(encoding="utf-8")
+          if "public SingleQuadParticle.Layer getLayer()" not in s:
+              anchor = "    public Identifier getTextureId() { return textureId; }"
+              if anchor not in s:
+                  raise SystemExit("ScreenData texture-layer insertion point not found")
+              s = s.replace(anchor, "    public SingleQuadParticle.Layer getLayer() { return particleRenderType; }\\n" + anchor, 1)
+              sd.write_text(s, encoding="utf-8")
+
+          # In 26.3 CompoundTag#getCompoundOrEmpty returns the tag directly.
+          pm = root / "PlayerStatusManagerClient.java"
+          s = pm.read_text(encoding="utf-8")
+          s = re.sub(
+              r"data\\.getCompoundOrEmpty\\(([^()]*)\\)\\.orElseGet\\(CompoundTag::new\\)",
+              r"data.getCompoundOrEmpty(\\1)",
+              s,
+          )
+          pm.write_text(s, encoding="utf-8")
+
+          # Older hook is retained as a no-op; the dedicated GameRendererCapture26 hook performs capture.
+          rh = root / "client/screen/RenderHelper.java"
+          s = rh.read_text(encoding="utf-8")
+          if "captureScreen()" not in s:
+              pos = s.rfind("}")
+              if pos < 0:
+                  raise SystemExit("RenderHelper class closing brace not found")
+              s = s[:pos] + "    public static synchronized void captureScreen() {}\\n" + s[pos:]
+              rh.write_text(s, encoding="utf-8")
+
+          # Ensure the replacement 26.3 capture hook is registered.
+          mixins = Path("WATUT/src/main/resources/watut_fabric.mixins.json")
+          if mixins.exists():
+              data = json.loads(mixins.read_text(encoding="utf-8"))
+              client_mixins = data.setdefault("client", [])
+              if "client.GameRendererCapture26" not in client_mixins:
+                  client_mixins.append("client.GameRendererCapture26")
+              mixins.write_text(json.dumps(data, indent=2) + "\\n", encoding="utf-8")
+          print("Applied Jonahnm-fork render compatibility adjustments for Minecraft 26.3.")
+          PY
+
       - name: Build CoroUtil for 26.3
         id: coroutil
         shell: bash
