@@ -52,6 +52,7 @@ jobs:
           jar tf "$jar_file" | grep -Fxq "fabric.mod.json"
           jar tf "$jar_file" | grep -Fxq "dev/efxd29/essentialsfabric/EssentialsFabric.class"
           unzip -p "$jar_file" fabric.mod.json | grep -Fq '"id": "essentialsfabric"'
+          unzip -p "$jar_file" fabric.mod.json | grep -Fq '">=0.162.0+26.3"'
           echo "Verified mod JAR: $jar_file"
           ls -lh "$jar_file"
 
@@ -59,6 +60,6 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: essentials-fabric-minecraft-26.3
-          path: projects/essentials-fabric/build/libs/essentials-fabric-0.1.0.jar
+          path: projects/essentials-fabric/build/libs/essentials-fabric-0.1.1.jar
           if-no-files-found: error
           retention-days: 30

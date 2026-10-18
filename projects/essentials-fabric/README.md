@@ -23,8 +23,8 @@ A leading slash on the nested command is optional. The target must be online.
 
 ## Install
 
-1. Use a Fabric 26.3 server with Java 25, Fabric Loader 0.19.5 or newer, and Fabric API 0.163.0+26.3 or compatible.
-2. Download the built essentials-fabric-0.1.0.jar from the GitHub Actions artifact.
+1. Use a Fabric 26.3 server with Java 25, Fabric Loader 0.19.5 or newer, and Fabric API 0.162.0+26.3 or compatible.
+2. Download the built essentials-fabric-0.1.1.jar from the GitHub Actions artifact.
 3. Place the JAR in the server's mods/ directory and restart the server.
 
 ## Build
