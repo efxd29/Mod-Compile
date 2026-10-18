@@ -1,0 +1,64 @@
+name: Build Essentials Fabric 26.3
+
+on:
+  push:
+    paths:
+      - "projects/essentials-fabric/**"
+      - ".github/workflows/build-essentials-fabric.yml"
+  pull_request:
+    paths:
+      - "projects/essentials-fabric/**"
+      - ".github/workflows/build-essentials-fabric.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Compile and verify mod JAR
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up Java 25
+        uses: actions/setup-java@v5
+        with:
+          distribution: microsoft
+          java-version: "25"
+
+      - name: Install Gradle 9.7.1
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fL --retry 3 --retry-delay 2 \
+            https://services.gradle.org/distributions/gradle-9.7.1-bin.zip \
+            -o "$RUNNER_TEMP/gradle-9.7.1-bin.zip"
+          unzip -q "$RUNNER_TEMP/gradle-9.7.1-bin.zip" -d "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/gradle-9.7.1/bin" >> "$GITHUB_PATH"
+
+      - name: Build
+        shell: bash
+        run: gradle --no-daemon --stacktrace --console=plain -p projects/essentials-fabric clean build
+
+      - name: Verify JAR contents and metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          jar_file="$(find projects/essentials-fabric/build/libs -maxdepth 1 -type f -name 'essentials-fabric-*.jar' ! -name '*-sources.jar' -print -quit)"
+          test -n "$jar_file"
+          jar tf "$jar_file" | grep -Fxq "fabric.mod.json"
+          jar tf "$jar_file" | grep -Fxq "dev/efxd29/essentialsfabric/EssentialsFabric.class"
+          unzip -p "$jar_file" fabric.mod.json | grep -Fq '"id": "essentialsfabric"'
+          echo "Verified mod JAR: $jar_file"
+          ls -lh "$jar_file"
+
+      - name: Upload installable mod JAR
+        uses: actions/upload-artifact@v7
+        with:
+          name: essentials-fabric-minecraft-26.3
+          path: projects/essentials-fabric/build/libs/essentials-fabric-0.1.0.jar
+          if-no-files-found: error
+          retention-days: 30
