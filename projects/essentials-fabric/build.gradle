@@ -4,6 +4,7 @@ plugins {
 
 group = project.maven_group
 version = project.mod_version
+def modVersion = project.version.toString()
 
 base {
     archivesName = "essentials-fabric"
@@ -20,10 +21,10 @@ dependencies {
 }
 
 processResources {
-    inputs.property "version", project.version
+    inputs.property "version", modVersion
 
     filesMatching("fabric.mod.json") {
-        expand "version": project.version
+        expand "version": modVersion
     }
 }
 
