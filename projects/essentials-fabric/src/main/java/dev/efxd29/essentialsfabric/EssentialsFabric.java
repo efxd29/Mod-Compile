@@ -43,8 +43,8 @@ public final class EssentialsFabric implements ModInitializer {
             return 0;
         }
 
-        // Use a source created from the target, preserving the target's permissions and player context.
-        target.getServer().getCommands().performPrefixedCommand(
+        // Use the target's own command source, permissions, and player context.
+        source.getServer().getCommands().performPrefixedCommand(
             target.createCommandSourceStack(),
             command
         );
