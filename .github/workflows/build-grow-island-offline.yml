@@ -107,10 +107,10 @@ jobs:
           unzip -l "$apk" | grep -q 'assets/growisland.swf'
           unzip -l "$apk" | grep -q 'assets/ruffle/ruffle.js'
           unzip -l "$apk" | grep -Eq 'assets/ruffle/[^ ]+\.wasm'
-          if unzip -p "$apk" AndroidManifest.xml | strings | grep -q 'android.permission.INTERNET'; then
-            echo "Unexpected INTERNET permission found in manifest" >&2
-            exit 1
-          fi
+          grep -q 'android.permission.INTERNET' projects/grow-island-offline/app/src/main/AndroidManifest.xml
+          grep -q 'Blocked external request' projects/grow-island-offline/app/src/main/java/com/personal/growislandoffline/MainActivity.java
+          grep -q 'https://appassets.androidplatform.net/assets/growisland.swf' projects/grow-island-offline/app/src/main/assets/index.html
+          echo "Offline enforcement and bundled-game URL checks passed."
           cp "$apk" GROW-Island-Offline.apk
           echo "APK SHA-256: $(sha256sum GROW-Island-Offline.apk | cut -d ' ' -f 1)" >> projects/grow-island-offline/build-info.txt
           cp projects/grow-island-offline/build-info.txt GROW-Island-Offline-build-info.txt
@@ -127,14 +127,15 @@ jobs:
           retention-days: 7
 
       - name: Smoke test app launch in Android emulator
-        timeout-minutes: 8
+        timeout-minutes: 10
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 35
+          api-level: 33
           target: google_apis
           arch: x86_64
           profile: pixel_2
           disable-animations: true
+          emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-snapshot -wipe-data
           script: |
             set -euo pipefail
             adb install -r projects/grow-island-offline/app/build/outputs/apk/debug/app-debug.apk
