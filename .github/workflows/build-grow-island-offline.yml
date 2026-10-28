@@ -116,7 +116,18 @@ jobs:
           cp projects/grow-island-offline/build-info.txt GROW-Island-Offline-build-info.txt
           ls -lh GROW-Island-Offline.apk GROW-Island-Offline-build-info.txt
 
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: GROW-Island-Offline-APK
+          path: |
+            GROW-Island-Offline.apk
+            GROW-Island-Offline-build-info.txt
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Smoke test app launch in Android emulator
+        timeout-minutes: 8
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
@@ -138,12 +149,3 @@ jobs:
               exit 1
             fi
 
-      - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: GROW-Island-Offline-APK
-          path: |
-            GROW-Island-Offline.apk
-            GROW-Island-Offline-build-info.txt
-          if-no-files-found: error
-          retention-days: 7
