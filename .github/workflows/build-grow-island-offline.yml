@@ -116,6 +116,28 @@ jobs:
           cp projects/grow-island-offline/build-info.txt GROW-Island-Offline-build-info.txt
           ls -lh GROW-Island-Offline.apk GROW-Island-Offline-build-info.txt
 
+      - name: Smoke test app launch in Android emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_2
+          disable-animations: true
+          script: |
+            set -euo pipefail
+            adb install -r projects/grow-island-offline/app/build/outputs/apk/debug/app-debug.apk
+            adb shell am force-stop com.personal.growislandoffline.debug
+            adb shell am start -W -n com.personal.growislandoffline.debug/com.personal.growislandoffline.MainActivity
+            sleep 8
+            adb shell pidof com.personal.growislandoffline.debug
+            adb shell dumpsys activity activities | grep -F 'com.personal.growislandoffline.MainActivity'
+            if adb logcat -d -s AndroidRuntime:E | grep -F 'FATAL EXCEPTION' | grep -F 'com.personal.growislandoffline'; then
+              echo "App crashed during startup" >&2
+              adb logcat -d -s AndroidRuntime:E >&2
+              exit 1
+            fi
+
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
