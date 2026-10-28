@@ -88,12 +88,12 @@ public final class MainActivity extends Activity {
         webView.setWebViewClient(new WebViewClient() {
             @Override
             public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
-                return assetLoader.shouldInterceptRequest(request.getUrl());
+                return interceptLocalAsset(request.getUrl());
             }
 
             @Override
             public WebResourceResponse shouldInterceptRequest(WebView view, String url) {
-                return assetLoader.shouldInterceptRequest(Uri.parse(url));
+                return interceptLocalAsset(Uri.parse(url));
             }
 
             @Override
@@ -130,9 +130,22 @@ public final class MainActivity extends Activity {
         webView.loadUrl("https://appassets.androidplatform.net/assets/index.html");
     }
 
+    private WebResourceResponse interceptLocalAsset(Uri uri) {
+        // Serve only APK-bundled assets. Any other HTTP(S) request is denied, so the
+        // INTERNET permission used by WebView cannot turn this into an online game.
+        if (!isLocalGameUrl(uri)) {
+            Log.w(TAG, "Blocked external request: " + uri);
+            return forbidden();
+        }
+        WebResourceResponse response = assetLoader.shouldInterceptRequest(uri);
+        return response != null ? response : notFound();
+    }
+
     private static boolean isLocalGameUrl(Uri uri) {
         return "https".equalsIgnoreCase(uri.getScheme())
-                && "appassets.androidplatform.net".equalsIgnoreCase(uri.getHost());
+                && "appassets.androidplatform.net".equalsIgnoreCase(uri.getHost())
+                && uri.getPath() != null
+                && uri.getPath().startsWith("/assets/");
     }
 
     private static String mimeType(String path) {
@@ -151,6 +164,11 @@ public final class MainActivity extends Activity {
 
     private static WebResourceResponse notFound() {
         return new WebResourceResponse("text/plain", "UTF-8", 404, "Not Found",
+                Collections.emptyMap(), new java.io.ByteArrayInputStream(new byte[0]));
+    }
+
+    private static WebResourceResponse forbidden() {
+        return new WebResourceResponse("text/plain", "UTF-8", 403, "Offline-only",
                 Collections.emptyMap(), new java.io.ByteArrayInputStream(new byte[0]));
     }
 
