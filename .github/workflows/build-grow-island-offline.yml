@@ -1,0 +1,114 @@
+name: Build GROW Island Offline APK
+
+on:
+  push:
+    branches:
+      - grow-island-offline-apk
+    paths:
+      - 'projects/grow-island-offline/**'
+      - '.github/workflows/build-grow-island-offline.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout build source
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android platform
+        run: sdkmanager --install "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Download and verify Ruffle Web runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          project="$GITHUB_WORKSPACE/projects/grow-island-offline"
+          tmp="$(mktemp -d)"
+          url="https://github.com/ruffle-rs/ruffle/releases/download/v0.7.1/ruffle-0.7.1-web-selfhosted.zip"
+          curl --fail --location --retry 3 --retry-all-errors "$url" -o "$tmp/ruffle.zip"
+          echo "ef12edbee135d581a9cd523837d746da30a07a64dbf1cf472d2e472c656f4b5e  $tmp/ruffle.zip" | sha256sum --check -
+          mkdir -p "$tmp/unpacked" "$project/app/src/main/assets/ruffle"
+          unzip -q "$tmp/ruffle.zip" -d "$tmp/unpacked"
+          js="$(find "$tmp/unpacked" -type f -name ruffle.js -print -quit)"
+          wasm="$(find "$tmp/unpacked" -type f -name ruffle.wasm -print -quit)"
+          test -n "$js" && test -s "$js"
+          test -n "$wasm" && test -s "$wasm"
+          cp "$js" "$project/app/src/main/assets/ruffle/ruffle.js"
+          cp "$wasm" "$project/app/src/main/assets/ruffle/ruffle.wasm"
+          license="$(find "$tmp/unpacked" -type f -iname 'LICENSE*' -print -quit || true)"
+          if [ -n "$license" ]; then cp "$license" "$project/app/src/main/assets/ruffle/"; fi
+          echo "Ruffle version: 0.7.1" > "$project/build-info.txt"
+          echo "Ruffle package SHA-256: ef12edbee135d581a9cd523837d746da30a07a64dbf1cf472d2e472c656f4b5e" >> "$project/build-info.txt"
+
+      - name: Fetch original GROW Island SWF from archive mirror
+        shell: bash
+        run: |
+          set -euo pipefail
+          project="$GITHUB_WORKSPACE/projects/grow-island-offline"
+          swf="$project/app/src/main/assets/growisland.swf"
+          url="https://www.smartjeux.com/wp-content/games/custom/G/growisland.swf"
+          curl --fail --location --retry 3 --retry-all-errors --user-agent "Mozilla/5.0 (compatible; offline-personal-archive/1.0)" "$url" -o "$swf"
+          python3 - "$swf" <<'PY'
+          import pathlib, sys
+          p = pathlib.Path(sys.argv[1])
+          data = p.read_bytes()
+          if len(data) < 200_000 or len(data) > 3_000_000:
+              raise SystemExit(f"Unexpected SWF size: {len(data)} bytes")
+          if data[:3] not in (b"FWS", b"CWS", b"ZWS"):
+              raise SystemExit(f"Downloaded file is not a valid SWF header: {data[:12]!r}")
+          print(f"SWF validated: {len(data)} bytes; signature={data[:3].decode('ascii')}")
+          PY
+          echo "SWF source: $url" >> "$project/build-info.txt"
+          echo "SWF SHA-256: $(sha256sum "$swf" | cut -d ' ' -f 1)" >> "$project/build-info.txt"
+          echo "SWF size: $(stat -c '%s' "$swf") bytes" >> "$project/build-info.txt"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+          cache-provider: basic
+
+      - name: Build debug APK
+        run: gradle --no-daemon --stacktrace -p projects/grow-island-offline :app:assembleDebug
+
+      - name: Verify offline payload is packaged
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk="projects/grow-island-offline/app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$apk"
+          unzip -l "$apk" | grep -q 'assets/growisland.swf'
+          unzip -l "$apk" | grep -q 'assets/ruffle/ruffle.js'
+          unzip -l "$apk" | grep -q 'assets/ruffle/ruffle.wasm'
+          if unzip -p "$apk" AndroidManifest.xml | strings | grep -q 'android.permission.INTERNET'; then
+            echo "Unexpected INTERNET permission found in manifest" >&2
+            exit 1
+          fi
+          cp "$apk" GROW-Island-Offline.apk
+          echo "APK SHA-256: $(sha256sum GROW-Island-Offline.apk | cut -d ' ' -f 1)" >> projects/grow-island-offline/build-info.txt
+          cp projects/grow-island-offline/build-info.txt GROW-Island-Offline-build-info.txt
+          ls -lh GROW-Island-Offline.apk GROW-Island-Offline-build-info.txt
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: GROW-Island-Offline-APK
+          path: |
+            GROW-Island-Offline.apk
+            GROW-Island-Offline-build-info.txt
+          if-no-files-found: error
+          retention-days: 7
