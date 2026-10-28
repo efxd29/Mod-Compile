@@ -43,16 +43,27 @@ jobs:
           url="https://github.com/ruffle-rs/ruffle/releases/download/v0.7.1/ruffle-0.7.1-web-selfhosted.zip"
           curl --fail --location --retry 3 --retry-all-errors "$url" -o "$tmp/ruffle.zip"
           echo "ef12edbee135d581a9cd523837d746da30a07a64dbf1cf472d2e472c656f4b5e  $tmp/ruffle.zip" | sha256sum --check -
-          mkdir -p "$tmp/unpacked" "$project/app/src/main/assets/ruffle"
+          assets="$project/app/src/main/assets/ruffle"
+          mkdir -p "$tmp/unpacked" "$assets"
           unzip -q "$tmp/ruffle.zip" -d "$tmp/unpacked"
           js="$(find "$tmp/unpacked" -type f -name ruffle.js -print -quit)"
-          wasm="$(find "$tmp/unpacked" -type f -name ruffle.wasm -print -quit)"
-          test -n "$js" && test -s "$js"
-          test -n "$wasm" && test -s "$wasm"
-          cp "$js" "$project/app/src/main/assets/ruffle/ruffle.js"
-          cp "$wasm" "$project/app/src/main/assets/ruffle/ruffle.wasm"
-          license="$(find "$tmp/unpacked" -type f -iname 'LICENSE*' -print -quit || true)"
-          if [ -n "$license" ]; then cp "$license" "$project/app/src/main/assets/ruffle/"; fi
+          if [ -z "$js" ] || [ ! -s "$js" ]; then
+            echo "Ruffle self-hosted package did not contain ruffle.js" >&2
+            find "$tmp/unpacked" -maxdepth 3 -type f -printf '%P\n' >&2
+            exit 1
+          fi
+          # Preserve the whole self-hosted package: the JS references hashed chunk/WASM filenames.
+          ruffle_dir="$(dirname "$js")"
+          cp -a "$ruffle_dir"/. "$assets"/
+          test -s "$assets/ruffle.js"
+          wasm="$(find "$assets" -maxdepth 1 -type f -name '*.wasm' -print -quit)"
+          if [ -z "$wasm" ] || [ ! -s "$wasm" ]; then
+            echo "Ruffle self-hosted package did not contain a WASM payload" >&2
+            find "$assets" -maxdepth 2 -type f -printf '%P\n' >&2
+            exit 1
+          fi
+          echo "Bundled Ruffle files:"
+          find "$assets" -maxdepth 1 -type f -printf '%f (%s bytes)\n' | sort
           echo "Ruffle version: 0.7.1" > "$project/build-info.txt"
           echo "Ruffle package SHA-256: ef12edbee135d581a9cd523837d746da30a07a64dbf1cf472d2e472c656f4b5e" >> "$project/build-info.txt"
 
@@ -95,7 +106,7 @@ jobs:
           test -s "$apk"
           unzip -l "$apk" | grep -q 'assets/growisland.swf'
           unzip -l "$apk" | grep -q 'assets/ruffle/ruffle.js'
-          unzip -l "$apk" | grep -q 'assets/ruffle/ruffle.wasm'
+          unzip -l "$apk" | grep -Eq 'assets/ruffle/[^ ]+\.wasm'
           if unzip -p "$apk" AndroidManifest.xml | strings | grep -q 'android.permission.INTERNET'; then
             echo "Unexpected INTERNET permission found in manifest" >&2
             exit 1
