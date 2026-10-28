@@ -55,10 +55,19 @@
         player.style.width = "100%";
         player.style.height = "100%";
         document.getElementById("game").appendChild(player);
-        player.ruffle().load("growisland.swf");
-        player.addEventListener("error", function () {
-          document.getElementById("fallback").style.display = "flex";
+        const fallback = document.getElementById("fallback");
+        function showFailure(error) {
+          fallback.textContent = "GROW Island gagal dimuat. Coba perbarui Android System WebView/Chrome. Detail: " + (error && error.message ? error.message : String(error || "Unknown error"));
+          fallback.style.display = "flex";
+          console.error("Ruffle load failed", error);
+        }
+        player.addEventListener("error", function (event) {
+          showFailure(event && event.detail ? event.detail : "Ruffle player error");
         });
+        const loadResult = player.ruffle().load("https://appassets.androidplatform.net/assets/growisland.swf");
+        if (loadResult && typeof loadResult.catch === "function") {
+          loadResult.catch(showFailure);
+        }
       } catch (error) {
         document.getElementById("fallback").style.display = "flex";
       }
