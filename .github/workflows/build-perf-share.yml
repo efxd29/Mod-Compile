@@ -29,7 +29,11 @@ jobs:
           tar -xzf /tmp/perfshare.tar.gz -C /tmp/perfshare
           test -f /tmp/perfshare/PerfShare_git/settings.gradle
           test -f /tmp/perfshare/PerfShare_git/app/build.gradle
-          echo "Source archive decoded and required Gradle files found."
+          ROOT=/tmp/perfshare/PerfShare_git
+          sed -i 's/DateFormat.getTimeFormat(context)/DateFormat.getTimeInstance()/' "$ROOT/app/src/main/java/com/perfshare/app/MetricsReader.java"
+          sed -i 's/R.mipmap.ic_launcher/R.drawable.ic_launcher/' "$ROOT/app/src/main/java/com/perfshare/app/MainActivity.java"
+          sed -i 's/13.1.5/12.2.0/g' "$ROOT/app/build.gradle"
+          echo "Source archive decoded; compatibility fixes applied."
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
