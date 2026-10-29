@@ -1,1 +1,1 @@
-Trigger Perf Share APK build after correcting Android SDK setup.
+Trigger Perf Share APK build after fixing sdkmanager PATH.
