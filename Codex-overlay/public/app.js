@@ -2,7 +2,7 @@ const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
 const state = {
   token: '', socket: null, connected: false, codexReady: false, host: null,
-  workspace: '', currentThread: null, threads: [], models: [], model: '',
+  workspace: '', currentThread: null, threadReadOnly: false, threads: [], models: [], model: '',
   pending: new Map(), rpcId: 100, currentView: 'chat', currentDir: '.', currentFile: null,
   attachments: [], activeTurn: null, activeTurnId: null, messageNodes: new Map(),
   approvalRequest: null, terminalSessions: new Set(), submitting: false, pendingUserMessages: []
@@ -42,6 +42,16 @@ function toggleTheme() {
 
 applyTheme(localStorage.getItem('codexTheme') || 'dark');
 
+function notifyReply() {
+  const title = state.currentThread?.name || 'Codex selesai membalas';
+  const latest = [...$('#messages').querySelectorAll('.message.assistant .message-text')].at(-1)?.textContent || 'Codex sudah menyelesaikan tugas.';
+  const body = latest.replace(/\\s+/g, ' ').trim().slice(0, 180);
+  if (window.CodexNative?.notifyReply) {
+    window.CodexNative.notifyReply(title, body || 'Codex sudah selesai.');
+  } else if ('Notification' in window && Notification.permission === 'granted') {
+    try { new Notification(title, { body: body || 'Codex sudah selesai.' }); } catch {}
+  }
+}
 function toast(message, duration = 3000) {
   const node = $('#toast'); node.textContent = message; node.classList.remove('hidden');
   clearTimeout(toast.timer); toast.timer = setTimeout(() => node.classList.add('hidden'), duration);
@@ -166,10 +176,12 @@ function handleCodexMessage(msg) {
     case 'turn/started':
       state.activeTurnId = p.turn?.id || state.activeTurnId;
       state.activeTurn = true; showActivity('Codex is working…'); break;
-    case 'turn/completed':
+    case 'turn/completed': {
       state.activeTurn = false; state.activeTurnId = null; hideActivity();
       if (p.turn?.status === 'failed') toast(p.turn.error?.message || 'Turn failed', 5000);
+      else notifyReply();
       break;
+    }
     case 'turn/plan/updated':
       addActivity((p.plan || []).map(step => `${step.status === 'completed' ? '✓' : step.status === 'inProgress' ? '◉' : '○'} ${step.step}`).join('\n') || p.explanation || 'Plan updated', 'plan'); break;
     case 'turn/diff/updated':
@@ -294,12 +306,21 @@ function renderThreads() {
 }
 async function openThread(thread) {
   try {
-    await rpc('thread/resume', { threadId: thread.id, excludeTurns: true });
-    state.currentThread = thread; $('#chatTitle').textContent = thread.name || thread.preview || 'Conversation';
+    let resumed = true;
+    try {
+      await rpc('thread/resume', { threadId: thread.id, excludeTurns: true });
+    } catch (error) {
+      if (!/active writer|already has an active writer/i.test(error.message)) throw error;
+      resumed = false;
+    }
+    state.currentThread = thread;
+    state.threadReadOnly = !resumed;
+    $('#chatTitle').textContent = thread.name || thread.preview || 'Conversation';
     $('#messages').replaceChildren(); state.messageNodes.clear(); $('#welcome').classList.add('hidden');
     const history = await rpc('thread/items/list', { threadId: thread.id, limit: 100, sortDirection: 'asc' });
     for (const entry of (history.data || [])) if (entry.item) addItem(entry.item, 'completed');
     if (!history.data?.length) $('#welcome').classList.remove('hidden');
+    if (!resumed) toast('Chat lama dibuka dalam mode baca karena masih ada proses aktif. Coba kirim setelah proses itu selesai.', 4500);
     setView('chat'); renderThreads(); closeSidebar();
   } catch (error) { toast(`Tidak bisa membuka thread: ${error.message}`, 5000); }
 }
@@ -346,6 +367,10 @@ async function sendPrompt() {
       const start = await rpc('thread/start', params, 60000);
       state.currentThread = start.thread;
       $('#chatTitle').textContent = start.thread?.name || 'New task';
+    }
+    if (state.threadReadOnly) {
+      await rpc('thread/resume', { threadId: state.currentThread.id, excludeTurns: true });
+      state.threadReadOnly = false;
     }
     const params = { threadId: state.currentThread.id, input: inputItems, cwd: state.workspace };
     if (state.model) params.model = state.model;
