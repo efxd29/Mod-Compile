@@ -332,3 +332,6 @@
   .appearance-row { align-items:flex-start; flex-direction:column; }
   .appearance-row .subtle-button { width:100%; }
 }
+
+/* Mobile chat layout: keep the composer at the bottom without bottom navigation. */
+@media(max-width:760px){.bottom-nav{display:none!important}.composer-wrap{padding:9px 10px calc(9px + env(safe-area-inset-bottom));}}
