@@ -335,3 +335,22 @@
 
 /* Mobile chat layout: keep the composer at the bottom without bottom navigation. */
 @media(max-width:760px){.bottom-nav{display:none!important}.composer-wrap{padding:9px 10px calc(9px + env(safe-area-inset-bottom));}}
+
+/* ChatGPT-style mobile chat layout: no bottom tab bar, composer anchored to screen bottom. */
+@media (max-width:760px) {
+  .app-shell { height:100dvh; min-height:0; }
+  .main-shell { height:100dvh; min-height:0; }
+  .bottom-nav { display:none !important; }
+  .view.active-view { flex:1 1 auto; min-height:0; overflow:hidden; }
+  #view-chat { min-height:0; }
+  #chatScroll { flex:1 1 auto; min-height:0; overflow-y:auto; }
+  #view-chat .composer-wrap {
+    flex:0 0 auto;
+    position:relative;
+    padding:10px 10px calc(10px + env(safe-area-inset-bottom));
+    border-top:1px solid var(--line);
+    background:var(--bg);
+  }
+  #view-chat .composer { margin-bottom:0; }
+  #view-chat .composer-disclaimer { margin-top:5px; }
+}
