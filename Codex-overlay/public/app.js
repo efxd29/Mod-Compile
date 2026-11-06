@@ -5,7 +5,7 @@ const state = {
   workspace: '', currentThread: null, threads: [], models: [], model: '',
   pending: new Map(), rpcId: 100, currentView: 'chat', currentDir: '.', currentFile: null,
   attachments: [], activeTurn: null, activeTurnId: null, messageNodes: new Map(),
-  approvalRequest: null, terminalSessions: new Set(), submitting: false
+  approvalRequest: null, terminalSessions: new Set(), submitting: false, pendingUserMessages: []
 };
 
 function getToken() {
@@ -214,7 +214,13 @@ function addItem(item, status) {
     record.textNode.innerHTML = renderMarkdown(record.text); scrollChat();
   } else if (item.type === 'userMessage' && (status === 'started' || status === 'completed')) {
     const text = (item.content || []).filter(x => x.type === 'text').map(x => x.text).join('\n');
-    if (text) addUserMessage(text, item.id);
+    if (text) {
+      const pendingIndex = state.pendingUserMessages.findIndex(entry => entry.text === text);
+      if (pendingIndex >= 0) {
+        const pending = state.pendingUserMessages.splice(pendingIndex, 1)[0];
+        state.messageNodes.set(item.id, pending.record);
+      } else addUserMessage(text, item.id);
+    }
   } else if (item.type === 'commandExecution') {
     const details = [item.command?.join?.(' ') || item.command || '', item.cwd || '', item.aggregatedOutput || ''].filter(Boolean).join('\n');
     addActivity(details || `Command ${status}: ${item.status || ''}`, 'command');
@@ -330,6 +336,9 @@ async function sendPrompt() {
       }
     }
     inputItems.unshift({ type: 'text', text: combinedText });
+    addUserMessage(combinedText, `pending-${Date.now()}-${state.rpcId}`);
+    const optimisticRecord = [...$('#messages').querySelectorAll('.message.user')].at(-1);
+    state.pendingUserMessages.push({ text: combinedText, record: { row: optimisticRecord, textNode: optimisticRecord.querySelector('.message-text'), text: combinedText } });
     input.value = ''; input.style.height = 'auto'; state.attachments = []; renderAttachments();
     if (!state.currentThread) {
       const params = { cwd: state.workspace };
