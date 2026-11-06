@@ -45,7 +45,7 @@ applyTheme(localStorage.getItem('codexTheme') || 'dark');
 function notifyReply() {
   const title = state.currentThread?.name || 'Codex selesai membalas';
   const latest = [...$('#messages').querySelectorAll('.message.assistant .message-text')].at(-1)?.textContent || 'Codex sudah menyelesaikan tugas.';
-  const body = latest.replace(/\\s+/g, ' ').trim().slice(0, 180);
+  const body = latest.replace(/\s+/g, ' ').trim().slice(0, 180);
   if (window.CodexNative?.notifyReply) {
     window.CodexNative.notifyReply(title, body || 'Codex sudah selesai.');
   } else if ('Notification' in window && Notification.permission === 'granted') {
@@ -325,7 +325,7 @@ async function openThread(thread) {
   } catch (error) { toast(`Tidak bisa membuka thread: ${error.message}`, 5000); }
 }
 function newChat() {
-  state.currentThread = null; state.activeTurn = false; state.activeTurnId = null;
+  state.currentThread = null; state.threadReadOnly = false; state.activeTurn = false; state.activeTurnId = null;
   $('#chatTitle').textContent = 'New task'; $('#messages').replaceChildren(); state.messageNodes.clear();
   $('#welcome').classList.remove('hidden'); hideActivity(); setView('chat'); closeSidebar(); $('#promptInput').focus(); renderThreads();
 }
