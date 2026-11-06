@@ -187,7 +187,7 @@ function handleCodexMessage(msg) {
 function createAssistantMessage(id) {
   $('#welcome').classList.add('hidden');
   const row = document.createElement('div'); row.className = 'message assistant';
-  row.innerHTML = `<div class="message-avatar"><img src="/icon-192.png" alt="Codex" /></div><div class="message-content"><div class="message-text"></div><div class="message-meta">Codex · host agent</div></div>`;
+  row.innerHTML = `<div class="message-avatar"><img src="/icon-192.png" alt="Codex" /></div><div class="message-content"><div class="message-text"></div></div>`;
   $('#messages').append(row);
   const record = { row, textNode: row.querySelector('.message-text'), text: '' };
   state.messageNodes.set(id, record); return record;
