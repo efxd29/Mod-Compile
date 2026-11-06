@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="theme-color" content="#111111" />
+  <meta name="description" content="Codex mobile client connected to the official Codex CLI running on a Termux host." />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="stylesheet" href="/styles.css" />
+  <title>Codex</title>
+</head>
+<body>
+  <div id="app" class="app-shell">
+    <aside id="sidebar" class="sidebar">
+      <div class="brand-row">
+        <div class="brand-mark"><img src="/icon-192.png" alt="Codex" /></div>
+        <div class="brand-copy"><strong>Codex</strong></div>
+        <button class="icon-button sidebar-close" id="sidebarClose" aria-label="Tutup menu">×</button>
+      </div>
+      <button class="new-chat-button" id="newChat"><span>＋</span> New chat</button>
+      <div class="nav-section-label">Workspace</div>
+      <button class="side-nav active" data-view="chat"><span class="nav-icon">◫</span> Chat <kbd>⌘ 1</kbd></button>
+      <button class="side-nav" data-view="files"><span class="nav-icon">▤</span> Files</button>
+      <button class="side-nav" data-view="terminal"><span class="nav-icon">&gt;_</span> Terminal</button>
+      <button class="side-nav" data-view="history"><span class="nav-icon">◷</span> History</button>
+      <div class="sidebar-divider"></div>
+      <div class="thread-head"><span>Recent threads</span><button class="text-icon" id="refreshThreads" title="Refresh">↻</button></div>
+      <div id="threadList" class="thread-list"><div class="side-empty">Connect to load conversations.</div></div>
+      <div class="sidebar-footer">
+        <div class="host-mini"><span id="hostDot" class="status-dot"></span><div><strong id="hostName">Host disconnected</strong><small id="hostPath">Termux · waiting</small></div></div>
+        <button class="side-nav settings-link" data-view="settings"><span class="nav-icon">⚙</span> Settings</button>
+      </div>
+    </aside>
+    <div class="scrim" id="scrim"></div>
+
+    <main class="main-shell">
+      <header class="topbar">
+        <div class="topbar-left">
+          <button class="icon-button menu-button" id="menuButton" aria-label="Buka menu">☰</button>
+          <div class="mobile-brand"><span class="brand-mark small"><img src="/icon-192.png" alt="" /></span><strong>Codex</strong></div>
+          <div class="workspace-select" id="workspaceButton"><span class="workspace-glyph">⌂</span><span id="workspaceLabel">Loading workspace…</span><span class="chevron">⌄</span></div>
+        </div>
+        <div class="topbar-right">
+          <div class="connection-pill" id="connectionPill"><span class="status-dot"></span><span>Connecting</span></div>
+          <button class="icon-button" id="topSettings" title="Settings">⚙</button>
+          <div class="avatar">B</div>
+        </div>
+      </header>
+
+      <section id="view-chat" class="view active-view">
+        <div class="chat-toolbar">
+          <div><div class="eyebrow">CODEX WORKSPACE</div><h1 id="chatTitle">New task</h1></div>
+          <div class="chat-toolbar-actions">
+            <select id="modelSelect" class="model-select" aria-label="Model"><option>Loading models…</option></select>
+            <button class="subtle-button" id="threadMenuButton">•••</button>
+          </div>
+        </div>
+        <div id="chatScroll" class="chat-scroll">
+          <div id="welcome" class="welcome-state">
+            <div class="welcome-orb"><img src="/icon-192.png" alt="Codex" /></div>
+            <div class="welcome-kicker">CODEX ON YOUR PHONE</div>
+            <h2>What are we building?</h2>
+            <p>Connect to Codex running on your Termux host.</p>
+            <div class="suggestion-grid">
+              <button class="suggestion" data-prompt="Inspect this project and explain its architecture. Do not change files yet."><span>⌕</span><strong>Understand a codebase</strong><small>Inspect the project structure</small></button>
+              <button class="suggestion" data-prompt="Read PRD.md and create a concrete implementation plan. Do not skip requirements."><span>☷</span><strong>Work from a PRD</strong><small>Plan the full implementation</small></button>
+              <button class="suggestion" data-prompt="Run the project's existing tests, report failures, and fix only issues related to the current task."><span>✓</span><strong>Run and fix tests</strong><small>Verify changes on the host</small></button>
+              <button class="suggestion" data-prompt="Review the current uncommitted changes. Do not edit files; report risks and bugs."><span>⌁</span><strong>Review changes</strong><small>Inspect the current diff</small></button>
+            </div>
+          </div>
+          <div id="messages" class="messages"></div>
+          <div id="activityLine" class="activity-line hidden"><span class="activity-spinner"></span><span id="activityText">Codex is working…</span><button id="stopTurn" class="stop-button">Stop</button></div>
+        </div>
+        <div class="composer-wrap">
+          <div id="attachmentTray" class="attachment-tray"></div>
+          <div class="composer">
+            <textarea id="promptInput" rows="1" placeholder="Message Codex…" autocomplete="off"></textarea>
+            <div class="composer-bottom">
+              <div class="composer-tools">
+                <button class="round-tool" id="attachButton" title="Attach files">＋</button>
+                <input id="fileInput" type="file" multiple hidden />
+                <button class="tool-label" id="projectFilesButton">▤ <span>Files</span></button>
+                <span class="composer-context" id="contextLabel">Termux host</span>
+              </div>
+              <div class="composer-send-group"><span class="hint-label">Enter to send</span><button id="sendButton" class="send-button" aria-label="Send message">↑</button></div>
+            </div>
+          </div>
+          <div class="composer-disclaimer">Codex runs on the host phone. Changes are made in the selected workspace.</div>
+        </div>
+      </section>
+
+      <section id="view-files" class="view">
+        <div class="page-heading"><div><div class="eyebrow">WORKSPACE</div><h1>Files</h1><p>Browse, edit, and upload files on the Termux host.</p></div><button class="primary-small" id="uploadFiles">＋ Upload</button><input id="fileUploadInput" type="file" multiple hidden /></div>
+        <div class="file-toolbar"><div id="breadcrumbs" class="breadcrumbs"></div><button class="icon-button" id="refreshFiles" title="Refresh">↻</button></div>
+        <div id="fileList" class="file-list"><div class="empty-panel">Connect to the host to browse project files.</div></div>
+        <div id="editorPanel" class="editor-panel hidden"><div class="editor-head"><div><strong id="editorName">File</strong><small id="editorPath"></small></div><div><button class="subtle-button" id="closeEditor">Close</button><button class="primary-small" id="saveFile">Save</button></div></div><textarea id="fileEditor" spellcheck="false"></textarea></div>
+      </section>
+
+      <section id="view-terminal" class="view">
+        <div class="page-heading"><div><div class="eyebrow">HOST SHELL</div><h1>Terminal</h1><p>Run commands directly on the Termux host phone.</p></div><div class="terminal-badge"><span class="status-dot online"></span> Termux</div></div>
+        <div class="terminal-card"><div class="terminal-top"><div class="terminal-lights"><i></i><i></i><i></i></div><span id="terminalCwd">~/projects</span><button class="text-icon" id="clearTerminal">Clear</button></div><div id="terminalOutput" class="terminal-output"><div class="terminal-welcome">Codex host terminal · commands run on the other phone.<br>Use with care. Type <b>pwd</b> to inspect the active directory.</div></div><form id="terminalForm" class="terminal-input-row"><span class="terminal-prompt">$</span><input id="terminalInput" placeholder="Enter command…" autocomplete="off" /><button class="send-button terminal-run" type="submit">↑</button></form></div>
+        <div class="terminal-note">Commands execute as the Termux app user, not root. Do not run commands you do not trust.</div>
+      </section>
+
+      <section id="view-history" class="view">
+        <div class="page-heading"><div><div class="eyebrow">CODEX</div><h1>History</h1><p>Continue a previous Codex conversation on the host.</p></div><button class="primary-small" id="historyNewChat">＋ New chat</button></div>
+        <div id="historyList" class="history-list"></div>
+      </section>
+
+      <section id="view-settings" class="view">
+        <div class="page-heading"><div><div class="eyebrow">CONFIGURATION</div><h1>Settings</h1><p>Manage the remote host and workspace.</p></div></div>
+        <div class="settings-grid">
+          <div class="settings-card appearance-card"><div class="settings-card-title">Appearance</div><div class="appearance-row"><div class="appearance-copy"><strong id="themeLabel">Dark mode</strong><small id="themeDescription">Dark surfaces and light text.</small></div><button id="themeToggle" class="subtle-button" type="button">Use light mode</button></div></div>
+          <div class="settings-card"><div class="settings-card-title">Host connection <span id="settingsStatus" class="status-tag">Checking</span></div><div class="settings-row"><span>Device</span><strong id="settingsHost">—</strong></div><div class="settings-row"><span>Runtime</span><strong id="settingsPlatform">—</strong></div><div class="settings-row"><span>Codex App Server</span><strong id="settingsCodex">—</strong></div><div class="settings-row"><span>Port</span><strong id="settingsPort">—</strong></div><button id="restartCodex" class="subtle-button full-width">Restart Codex App Server</button></div>
+          <div class="settings-card"><div class="settings-card-title">Workspace directory</div><label class="field-label" for="workspacePath">Absolute path on Termux host</label><input id="workspacePath" class="text-field" placeholder="/data/data/com.termux/files/home/projects" /><button id="saveWorkspace" class="primary-small">Save workspace</button><small class="field-help">Allowed locations: Termux HOME and Android shared storage (when permission is granted).</small></div>
+          <div class="settings-card"><div class="settings-card-title">Connection security</div><p class="settings-description">This bridge uses a private pairing token. Keep the host on a trusted LAN or private VPN. Never expose this port directly to the public internet.</p><div class="security-line"><span class="status-dot online"></span><span>Token authentication enabled</span></div></div>
+          <div class="settings-card"><div class="settings-card-title">About</div><div class="about-mark"><img src="/icon-192.png" alt="Codex" /></div><strong>Codex</strong><small>Android client · v0.1.0</small><p class="settings-description">The Codex engine, account session, project files, and builds stay on your Termux host.</p></div>
+        </div>
+      </section>
+
+      <nav class="bottom-nav" aria-label="Main navigation">
+        <button class="bottom-nav-item active" data-view="chat"><span>◫</span><small>Chat</small></button>
+        <button class="bottom-nav-item" data-view="files"><span>▤</span><small>Files</small></button>
+        <button class="bottom-nav-item" data-view="terminal"><span>&gt;_</span><small>Terminal</small></button>
+        <button class="bottom-nav-item" data-view="history"><span>◷</span><small>History</small></button>
+        <button class="bottom-nav-item" data-view="settings"><span>⚙</span><small>Settings</small></button>
+      </nav>
+    </main>
+  </div>
+
+  <div id="approvalOverlay" class="modal-overlay hidden"><div class="approval-modal"><div class="approval-icon">!</div><div class="eyebrow">CODEX NEEDS APPROVAL</div><h2 id="approvalTitle">Allow this action?</h2><p id="approvalReason"></p><pre id="approvalCommand" class="approval-command"></pre><div class="approval-actions"><button class="danger-outline" id="declineApproval">Decline</button><button class="primary-small" id="acceptSession">Allow for session</button><button class="primary-small" id="acceptApproval">Allow once</button></div></div></div>
+  <div id="workspacePopover" class="popover hidden"><div class="popover-title">Active workspace</div><div id="popoverWorkspace"></div><button class="text-button" id="popoverSettings">Change directory in Settings →</button></div>
+  <div id="toast" class="toast hidden"></div>
+  <script src="/app.js" defer></script>
+  <script>if('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('/service-worker.js').catch(()=>{});</script>
+</body>
+</html>
