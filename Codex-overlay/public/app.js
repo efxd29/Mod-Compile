@@ -130,7 +130,7 @@ function handlePacket(packet) {
     state.codexReady = packet.status?.codex === 'ready'; updateConnection(); refreshSettings();
     if (packet.error) toast(`Codex: ${packet.error}`, 5000); return;
   }
-  if (packet.type === 'host_log') { addActivity(packet.line, 'log'); return; }
+  if (packet.type === 'host_log') return;
   if (packet.type === 'terminal_output') { appendTerminal(packet); return; }
   if (packet.type === 'terminal_exit') { appendTerminalExit(packet); return; }
   if (packet.type === 'client_error') { toast(packet.error || 'Bridge error'); return; }
@@ -175,8 +175,11 @@ function handleCodexMessage(msg) {
     case 'turn/diff/updated':
       if (p.diff) addActivity(`File changes updated\n${p.diff}`, 'diff');
       break;
-    case 'warning': case 'configWarning': case 'error':
-      addActivity(p.message || p.summary || JSON.stringify(p), 'warning'); break;
+    case 'warning': case 'configWarning': case 'error': {
+      const message = p.message || p.summary || JSON.stringify(p);
+      if (/could not find bubblewrap on PATH/i.test(message)) break;
+      addActivity(message, 'warning'); break;
+    }
     case 'serverRequest/resolved':
       if (state.approvalRequest && state.approvalRequest.id === p.requestId) closeApproval();
       break;
