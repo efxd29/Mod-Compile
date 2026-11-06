@@ -196,7 +196,7 @@ function addUserMessage(text, id) {
   if (id && state.messageNodes.has(id)) return;
   $('#welcome').classList.add('hidden');
   const row = document.createElement('div'); row.className = 'message user';
-  row.innerHTML = `<div class="message-avatar">B</div><div class="message-content"><div class="message-text"></div></div>`;
+  row.innerHTML = `<div class="message-content"><div class="message-text"></div></div>`;
   const textNode = row.querySelector('.message-text');
   textNode.textContent = text;
   $('#messages').append(row);
