@@ -320,7 +320,6 @@ async function openThread(thread) {
     const history = await rpc('thread/items/list', { threadId: thread.id, limit: 100, sortDirection: 'asc' });
     for (const entry of (history.data || [])) if (entry.item) addItem(entry.item, 'completed');
     if (!history.data?.length) $('#welcome').classList.remove('hidden');
-    if (!resumed) toast('Chat lama dibuka dalam mode baca karena masih ada proses aktif. Coba kirim setelah proses itu selesai.', 4500);
     setView('chat'); renderThreads(); closeSidebar();
   } catch (error) { toast(`Tidak bisa membuka thread: ${error.message}`, 5000); }
 }
@@ -397,6 +396,7 @@ function setView(name) {
   if (name === 'settings') refreshSettings();
   if (name === 'history') loadThreads();
   closePopover();
+  closeSidebar();
 }
 function openSidebar() { $('#sidebar').classList.add('open'); $('#scrim').classList.add('show'); }
 function closeSidebar() { $('#sidebar').classList.remove('open'); $('#scrim').classList.remove('show'); }
