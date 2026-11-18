@@ -1,0 +1,65 @@
+name: Build Termux APK
+
+on:
+  push:
+    branches: [termux-build]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  # Upstream termux-app commit yang dipatch. Ganti kalau mau rebase.
+  UPSTREAM_SHA: 8629e632fcb95da272221be327db653fb24befe9
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo ini
+        uses: actions/checkout@v4
+        with:
+          path: custom
+
+      - name: Checkout upstream termux-app
+        uses: actions/checkout@v4
+        with:
+          repository: termux/termux-app
+          ref: ${{ env.UPSTREAM_SHA }}
+          path: termux-app
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Apply patch
+        run: |
+          cd termux-app
+          git apply --verbose ../custom/termux/custom.patch
+
+      - name: Pasang debug keystore tetap
+        run: |
+          mkdir -p ~/.android
+          base64 -d custom/termux/debug.keystore.b64 > ~/.android/debug.keystore
+
+      - name: Build APK
+        working-directory: termux-app
+        env:
+          TERMUX_PACKAGE_VARIANT: apt-android-7
+          TERMUX_APK_VERSION_TAG: custom-${{ github.run_number }}
+        run: ./gradlew assembleDebug --stacktrace
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: termux-apk
+          path: termux-app/app/build/outputs/apk/debug/*.apk
+
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: Termux custom build ${{ github.run_number }}
+          files: termux-app/app/build/outputs/apk/debug/*.apk
